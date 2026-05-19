@@ -2194,3 +2194,376 @@ d) O ε não afeta o SVR, apenas o SVC
 *Fim da Seção 7 — próxima seção: Árvore de Decisão*
 
 ---
+
+## Seção 8 — Árvore de Decisão
+
+### 8.1 Visão Geral
+
+A **Árvore de Decisão** é um algoritmo de aprendizado supervisionado **não-paramétrico** utilizado para **classificação e regressão**. Ela constrói uma estrutura hierárquica (grafo direcionado acíclico) que divide o espaço de características em regiões progressivamente menores e exclusivas por meio de **regras de decisão lógicas simples** (ex: `idade ≤ 27.5`).
+
+**Por que "não-paramétrico"?**  
+Ao contrário de modelos paramétricos (ex: Regressão Linear, que sempre aprende apenas β e b), a Árvore de Decisão não assume uma equação prévia — seu número de nós cresce e se molda à complexidade dos dados.
+
+| Tipo de Modelo | Exemplo | Parâmetros |
+|---|---|---|
+| **Paramétrico (rígido)** | Regressão Linear y = ax + b | Fixos (a e b), independe do tamanho dos dados |
+| **Não-Paramétrico (flexível)** | Árvore de Decisão | Varia livremente conforme a dificuldade do dataset |
+
+---
+
+### 8.2 Estrutura e Nomenclatura
+
+```
+         [Nó Raiz]          <- todo o dataset; aplica a primeira regra
+         /       \
+   [Nó Interno]  [Nó Folha] <- Nó Folha: sem mais divisões
+    /      \
+[Folha] [Folha]
+```
+
+| Componente | Descrição | O que contém |
+|---|---|---|
+| **Nó Raiz** | Ponto de partida do grafo | Todo o conjunto de dados |
+| **Nó Interno** | Aplica regra de decisão (`x₁ ≤ 2.5`) | Subconjunto de dados |
+| **Nó Folha (Terminal)** | Região final, sem mais divisões | **Classe majoritária** (classificação) ou **média dos valores** (regressão) |
+
+**Leitura de um nó no Scikit-Learn:**
+
+```
+petal length (cm) <= 2.45   <- regra de decisão
+gini = 0.667                <- impureza do nó
+samples = 150               <- quantas instâncias chegam aqui
+value = [50, 50, 50]        <- [qtd classe 0, qtd classe 1, qtd classe 2]
+class = setosa              <- classe predita (majoritária)
+```
+
+---
+
+### 8.3 Algoritmo CART — Como a Árvore é Construída
+
+O algoritmo **CART** (*Classification and Regression Trees*) constrói a árvore de forma **top-down e gananciosa (greedy)**:
+
+> A cada nó, avalia **todas as features** e **todos os pontos de corte possíveis**, escolhendo o par (feature k, limiar tₖ) que produz os subconjuntos mais **homogêneos (puros)**.
+
+#### Função de Custo do CART
+
+```
+J(k, tk) = (m_esq / m) * G_esq  +  (m_dir / m) * G_dir
+```
+
+**Dissecando a fórmula:**
+
+| Símbolo | Nome | O que significa |
+|---|---|---|
+| `k` | Feature escolhida | Ex: "idade", "petal length" |
+| `tₖ` | Limiar de corte | Ex: `<= 27.5` |
+| `m` | Total de instâncias no nó | Tamanho do conjunto atual |
+| `m_esq / m` | Proporção no nó esquerdo | Peso ponderado do nó esquerdo |
+| `m_dir / m` | Proporção no nó direito | Peso ponderado do nó direito |
+| `G_esq`, `G_dir` | Impureza dos filhos | Calculada pelo Gini ou Entropia |
+
+**Regra prática:** O corte com **menor J(k, tₖ)** é escolhido.
+
+---
+
+### 8.4 Métricas de Impureza
+
+#### 8.4.1 Índice Gini (padrão no Scikit-Learn)
+
+```
+G_i = 1 - SUM(p_{i,k}²)   para k = 1..n
+```
+
+- **Gini = 0** → nó puro (todas as instâncias pertencem à mesma classe)
+- **Gini = 0.5** → máxima impureza (classes perfeitamente misturadas, 2 classes 50/50)
+
+**Exemplo do dataset Iris (nó versicolor com 54 amostras, classes: 0 setosa, 49 versicolor, 5 virginica):**
+```
+G₄ = 1 - (0/54)² - (49/54)² - (5/54)²
+   = 1 - 0 - 0.824 - 0.0086
+   = 0.168
+```
+
+#### 8.4.2 Entropia (Ganho de Informação)
+
+```
+H_i = - SUM( p_{i,k} * ln(p_{i,k}) )   onde p_{i,k} != 0
+```
+
+Onde `p_{i,k}` = nº de instâncias da classe k / nº de instâncias no i-ésimo nó.
+
+**Mesmo nó, usando entropia:**
+```
+H = - (49/54)*ln(49/54) - (5/54)*ln(5/54) = 0.308
+```
+
+#### Gini vs. Entropia — Quando usar cada um?
+
+| Critério | Gini | Entropia |
+|---|---|---|
+| **Velocidade** | Mais rápido (sem logaritmo) | Mais lento |
+| **Padrão no sklearn** | Sim (`criterion='gini'`) | Não (`criterion='entropy'`) |
+| **Formato da árvore** | Tende a isolar classe maior | Tende a produzir árvores mais **balanceadas** |
+| **Diferença prática** | Geralmente resultados similares | Útil quando se quer simetria |
+
+#### 8.4.3 Para Regressão: MSE
+
+Na regressão, o CART minimiza o **MSE ponderado** em vez do Gini:
+
+```
+J(k, tk) = (m_L / m) * MSE_L  +  (m_R / m) * MSE_R
+
+MSE_No  = SUM( (y_hat_No - y_i)² )   para i no nó
+y_hat_No = (1 / m_No) * SUM(y_i)     média dos valores no nó
+```
+
+---
+
+### 8.5 Exemplo Numérico Passo a Passo (CART com Gini)
+
+**Cenário:** Prever se cliente compra produto (Sim/Não) com base na Idade.
+
+Dados: `20 (Não), 25 (Não), 30 (Sim), 35 (Não), 40 (Sim), 50 (Sim)` — 3 Não, 3 Sim.
+
+**Passo 1:** CART ordena e testa pontos médios: 22.5, 27.5, 32.5, 37.5, 45.0
+
+**Passo 2:** Calcula Gini ponderado para cada corte:
+
+| Corte | Nó Esq. | Gini Esq. | Nó Dir. | Gini Dir. | **Gini Ponderado** |
+|---|---|---|---|---|---|
+| Idade <= 32.5 | [20,25,30] → 2 Não, 1 Sim | 0.44 | [35,40,50] → 1 Não, 2 Sim | 0.44 | **(3/6)×0.44 + (3/6)×0.44 = 0.44** |
+| **Idade <= 27.5** | [20,25] → 2 Não, 0 Sim (**puro!**) | **0.00** | [30,35,40,50] → 1 Não, 3 Sim | 0.375 | **(2/6)×0 + (4/6)×0.375 = 0.25** ✓ |
+
+**Passo 3:** Corte em 27.5 vence (Gini 0.25 < 0.44). O processo repete recursivamente nos nós filhos.
+
+> **Regra de ouro:** O CART sempre escolhe o corte com **menor Gini ponderado** — maior pureza nos filhos.
+
+---
+
+### 8.6 Regularização e Poda (Pruning)
+
+Sem restrições, o CART divide os dados até que cada folha tenha **1 amostra** (Gini = 0) → **overfitting severo**.
+
+#### Pré-poda (restrições de crescimento)
+
+| Parâmetro | O que faz | Efeito quando aumentado |
+|---|---|---|
+| `max_depth` | Limita profundidade máxima da árvore | Menos divisões → menos overfitting |
+| `min_samples_split` | Mín. de instâncias para permitir divisão de um nó | Nós com poucos dados não se dividem |
+| `min_samples_leaf` | Mín. de instâncias que um nó folha deve ter | Evita folhas com 1 amostra |
+| `max_features` | Nº máximo de features avaliadas por corte | Reduz variância (usado no Random Forest) |
+
+#### Pós-poda (Poda de Complexidade de Custo)
+
+```
+R_alpha(T) = R(T)  +  alpha * |T|
+```
+
+| Símbolo | Significado |
+|---|---|
+| `R(T)` | Erro total da árvore no treinamento |
+| `|T|` | Número de folhas (tamanho da árvore) |
+| `alpha` | Penalidade de complexidade (hiperparâmetro) |
+
+**Como aplicar:** Aumentar alpha força a eliminação de ramos que contribuem pouco para a redução do erro → árvore menor, mais generalizável. No sklearn: `ccp_alpha`.
+
+---
+
+### 8.7 Árvore para Classificação vs. Regressão
+
+| Aspecto | Classificação | Regressão |
+|---|---|---|
+| **Classe sklearn** | `DecisionTreeClassifier` | `DecisionTreeRegressor` |
+| **Métrica de impureza** | Gini ou Entropia | MSE (ou MAE) |
+| **Predição da folha** | Classe majoritária | Média dos valores alvo |
+| **Fronteira de decisão** | Regiões de classe | Patamares (degraus) de valor |
+| **Critério padrão sklearn** | `criterion='gini'` | `criterion='squared_error'` |
+
+---
+
+### 8.8 Vantagens e Desvantagens
+
+| Vantagens | Desvantagens |
+|---|---|
+| **Interpretabilidade** (caixa-branca: fácil explicar regras para negócio) | **Alto risco de overfitting** sem poda |
+| **Preparo mínimo**: não exige normalização (sem StandardScaler) | **Alta instabilidade**: pequena mudança nos dados → estrutura completamente diferente |
+| **Versatilidade**: lida com relações não-lineares e dados mistos | **Fronteiras ortogonais**: só cria cortes perpendiculares aos eixos (dificuldade com padrões diagonais) |
+| Suporta classificação multiclasse e regressão | Solução ótima global não garantida (greedy) |
+
+> **Instabilidade na prática:** Remover apenas 1 amostra outlier, ou rotacionar 45° o dataset, pode gerar uma árvore completamente diferente. Por isso usamos **Ensembles (Random Forest, XGBoost)** para mitigar esse problema.
+
+---
+
+### 8.9 Código Python Completo
+
+**Cenário:** Sistema de aprovação de crédito bancário com base em renda e score de crédito.
+
+```python
+import numpy as np
+from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor, export_text
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.metrics import classification_report
+
+np.random.seed(42)
+n = 500
+
+# Dados sintéticos: renda (k R$) e score de crédito (0-1000)
+renda = np.random.normal(5, 2, n).clip(1, 15)
+score = np.random.normal(600, 150, n).clip(100, 1000)
+# Aprovado = renda > 4 E score > 550, com 10% de ruído
+aprovado = ((renda > 4) & (score > 550)).astype(int)
+aprovado = np.where(np.random.rand(n) < 0.10, 1 - aprovado, aprovado)
+
+X = np.column_stack([renda, score])
+X_train, X_test, y_train, y_test = train_test_split(
+    X, aprovado, test_size=0.2, random_state=42, stratify=aprovado
+)
+
+# 1. Árvore sem restrições (overfitting)
+tree_deep = DecisionTreeClassifier(random_state=42)
+tree_deep.fit(X_train, y_train)
+print(f"Sem restrição  — treino: {tree_deep.score(X_train, y_train):.3f} | "
+      f"teste: {tree_deep.score(X_test, y_test):.3f}")
+print(f"Profundidade: {tree_deep.get_depth()} | Folhas: {tree_deep.get_n_leaves()}")
+
+# 2. Árvore com pré-poda (max_depth)
+tree_pruned = DecisionTreeClassifier(max_depth=4, min_samples_leaf=10, random_state=42)
+tree_pruned.fit(X_train, y_train)
+print(f"\nCom pré-poda   — treino: {tree_pruned.score(X_train, y_train):.3f} | "
+      f"teste: {tree_pruned.score(X_test, y_test):.3f}")
+print(classification_report(y_test, tree_pruned.predict(X_test),
+                             target_names=['Reprovado', 'Aprovado']))
+
+# 3. Exportar regras legíveis
+feature_names = ['renda_k', 'score_credito']
+print(export_text(tree_pruned, feature_names=feature_names, max_depth=3))
+
+# 4. GridSearch: encontrar melhor profundidade
+param_grid = {
+    'max_depth': [2, 3, 4, 5, 6, None],
+    'min_samples_leaf': [1, 5, 10, 20],
+    'criterion': ['gini', 'entropy']
+}
+grid = GridSearchCV(DecisionTreeClassifier(random_state=42),
+                    param_grid, cv=5, scoring='f1', n_jobs=-1)
+grid.fit(X_train, y_train)
+print(f"\nMelhores hiperparâmetros: {grid.best_params_}")
+
+# 5. Importância das features
+best_tree = grid.best_estimator_
+for name, imp in zip(feature_names, best_tree.feature_importances_):
+    print(f"  {name}: {imp:.3f}")
+
+# 6. Pós-poda com ccp_alpha
+path = DecisionTreeClassifier(random_state=42).cost_complexity_pruning_path(X_train, y_train)
+ccp_alphas = path.ccp_alphas[::5]  # amostra de alphas
+scores_teste = []
+for alpha in ccp_alphas:
+    clf = DecisionTreeClassifier(ccp_alpha=alpha, random_state=42)
+    clf.fit(X_train, y_train)
+    scores_teste.append(clf.score(X_test, y_test))
+melhor_alpha = ccp_alphas[np.argmax(scores_teste)]
+print(f"\nMelhor ccp_alpha: {melhor_alpha:.5f}")
+
+# 7. Predict_proba
+cliente_novo = np.array([[6.5, 720]])  # renda 6.5k, score 720
+proba = tree_pruned.predict_proba(cliente_novo)[0]
+print(f"\nCliente (renda=6.5k, score=720):")
+print(f"  P(Reprovado) = {proba[0]:.3f} | P(Aprovado) = {proba[1]:.3f}")
+print(f"  Decisão: {'Aprovado' if proba[1] > 0.5 else 'Reprovado'}")
+
+# 8. Árvore de Regressão
+reg = DecisionTreeRegressor(max_depth=3, random_state=42)
+reg.fit(score.reshape(-1, 1), renda)
+print(f"\nRegressão R²: {reg.score(score.reshape(-1, 1), renda):.3f}")
+print(f"Score=700 → renda estimada: R$ {reg.predict([[700]])[0]:.2f}k")
+```
+
+---
+
+### 8.10 Questões no Estilo da Prova
+
+---
+
+**Questão 1**
+
+Um analista treinou uma Árvore de Decisão para classificar clientes como "churn" ou "retido" e observou: acurácia de treino = 99%, acurácia de teste = 68%. Ao inspecionar o modelo, verificou que a árvore tem profundidade 25 e 312 folhas para um dataset de 1.000 amostras. Qual é o diagnóstico correto e a ação mais adequada?
+
+a) O modelo está em underfitting; aumentar `max_depth` resolverá o problema.  
+b) O modelo está em overfitting; aplicar pré-poda com `max_depth` ou `min_samples_leaf` ou pós-poda com `ccp_alpha` resolverá o problema.  
+c) O modelo está em overfitting; normalizar os dados com `StandardScaler` resolverá o problema.  
+d) O modelo está corretamente treinado; a diferença entre treino e teste é esperada em datasets pequenos.
+
+**Resposta: b)**
+
+- **(a) Incorreta.** Acurácia de treino = 99% descarta underfitting (modelo subajustado teria erro alto no treino também). Aumentar `max_depth` pioraria ainda mais o overfitting.
+- **(b) Correta.** Treino 99%, teste 68% com árvore de profundidade 25 é overfitting textbook — a árvore "decorou" os dados de treino. Pré-poda (`max_depth`, `min_samples_leaf`) ou pós-poda (`ccp_alpha`) são as soluções corretas.
+- **(c) Incorreta.** Árvore de Decisão **não** exige normalização — ela é invariante a escala porque usa apenas comparações `<= threshold`. Normalizar não alteraria o resultado.
+- **(d) Incorreta.** Uma diferença de 31 pontos percentuais entre treino e teste não é esperada ou aceitável; é sinal claro de overfitting severo.
+
+---
+
+**Questão 2**
+
+Ao treinar uma Árvore de Decisão com `criterion='gini'` em um nó com 100 instâncias (60 da classe A e 40 da classe B), qual é o valor do índice Gini desse nó?
+
+a) 0.48  
+b) 0.24  
+c) 0.60  
+d) 0.50
+
+**Resposta: a)**
+
+**Cálculo:**
+```
+p_A = 60/100 = 0.6
+p_B = 40/100 = 0.4
+G = 1 - (0.6)² - (0.4)² = 1 - 0.36 - 0.16 = 0.48
+```
+
+- **(a) Correta.** G = 1 − 0.6² − 0.4² = 0.48. O nó tem impureza moderada.
+- **(b) Incorreta.** 0.24 seria o resultado de G = 1 − (0.8)² − (0.2)² (distribuição 80/20), não 60/40.
+- **(c) Incorreta.** 0.60 não tem relação com o cálculo; confunde a proporção da classe com a impureza.
+- **(d) Incorreta.** Gini = 0.50 é a **máxima impureza** possível para 2 classes (proporção 50/50), não 60/40.
+
+---
+
+**Questão 3**
+
+Um cientista de dados treinou uma Árvore de Decisão para regressão (prever preço de imóvel) e outra para classificação (aprovação de crédito). Qual afirmação descreve corretamente a diferença fundamental entre os dois modos?
+
+a) A árvore de regressão usa o índice Gini como critério de divisão; a de classificação usa o MSE.  
+b) A árvore de regressão prediz a **média dos valores alvo** das instâncias na folha, minimizando o MSE; a de classificação prediz a **classe majoritária**, minimizando o Gini ou a Entropia.  
+c) A árvore de regressão não sofre overfitting pois prediz valores contínuos; apenas a de classificação necessita de poda.  
+d) A árvore de regressão divide os dados minimizando a Entropia; a de classificação divide minimizando o MSE.
+
+**Resposta: b)**
+
+- **(a) Incorreta.** Invertido: Gini/Entropia são para **classificação**; MSE é para **regressão**.
+- **(b) Correta.** Na regressão, a folha retorna `ŷ_nó = média(yᵢ)` e o critério de divisão é o MSE ponderado. Na classificação, retorna a classe com mais instâncias e divide por Gini ou Entropia.
+- **(c) Incorreta.** Árvores de regressão sofrem overfitting tanto quanto as de classificação — sem restrições, cada folha terá 1 amostra com MSE = 0 no treino, mas péssima generalização.
+- **(d) Incorreta.** Totalmente invertido em relação à alternativa (a).
+
+---
+
+**Questão 4**
+
+Durante uma apresentação, um engenheiro demonstrou que ao **rotacionar 45°** os dados de treinamento de uma Árvore de Decisão, o modelo gerou fronteiras de decisão completamente diferentes e com desempenho muito inferior. Qual limitação da Árvore de Decisão esse fenômeno ilustra, e qual abordagem mitiga esse problema?
+
+a) O algoritmo CART é quadrático e não escala bem; a solução é usar Regressão Logística.  
+b) A Árvore de Decisão cria apenas **fronteiras ortogonais** (perpendiculares aos eixos), gerando alta instabilidade a rotações; Ensembles como **Random Forest** mitigam esse problema.  
+c) O overfitting causou a instabilidade; aumentar `min_samples_leaf` tornaria o modelo invariante a rotações.  
+d) A normalização com `StandardScaler` é obrigatória na Árvore de Decisão; sem ela o modelo é instável a transformações geométricas.
+
+**Resposta: b)**
+
+- **(a) Incorreta.** O problema não é custo computacional, mas a natureza dos cortes (ortogonais). Regressão Logística tem fronteiras lineares, não resolve padrões complexos rotacionados.
+- **(b) Correta.** A Árvore de Decisão só cria divisões `feature_i <= threshold`, que são **perpendiculares aos eixos**. Ao rotacionar os dados, a fronteira diagonal "ótima" exige múltiplos degraus, gerando modelos piores. O **Random Forest** combina muitas árvores com subamostras aleatórias, reduzindo a variância e a instabilidade geométrica.
+- **(c) Incorreta.** Poda reduz overfitting, mas **não** torna a árvore invariante a rotações. As fronteiras continuarão ortogonais independentemente de `min_samples_leaf`.
+- **(d) Incorreta.** Árvore de Decisão **não exige** normalização — é uma das suas principais vantagens. A instabilidade a rotações é estrutural (fronteiras ortogonais), não relacionada à escala dos dados.
+
+---
+
+*Fim da Seção 8 — próxima seção: Aprendizado Ensemble*
+
+---
