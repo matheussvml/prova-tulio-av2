@@ -3455,7 +3455,601 @@ d) Desativar o bootstrap (`bootstrap=False`) para que todas as árvores vejam to
 
 ---
 
-*Fim da Seção 10 — próxima seção: KNN (K-Nearest Neighbors)*
+---
+
+## Seção 11 — KNN (K-Nearest Neighbors)
+
+### 11.1 Métodos Baseados em Distância — A Premissa Fundamental
+
+O KNN pertence à família dos **Métodos Baseados em Distância**, onde os dados são interpretados de forma **estritamente espacial**: cada instância é um ponto em um espaço n-dimensional, e a premissa central é:
+
+> **"Similaridade equivale a proximidade espacial"** — se dois pontos estão geometricamente próximos, tendem a pertencer à mesma classe ou ter o mesmo comportamento.
+
+O KNN é o representante mais elementar dessa família, baseando **100% de suas decisões** no cálculo matemático de distância.
+
+**Frase do professor:** *"Diga-me com quem andas e te direi quem és."*
+
+| Conceito | Definição |
+|---|---|
+| Espaço de features | Cada instância vira um ponto em R^n (n = número de features) |
+| Proximidade | Pontos próximos → classe provável similar |
+| Premissa | Vizinhança local é mais informativa que padrões globais |
+| Paradigma | Não cria modelo explícito; decide na hora da predição |
+
+---
+
+### 11.2 Conceito do KNN — Lazy Learner e Não-Paramétrico
+
+O KNN tem duas propriedades características que o diferenciam de todos os outros algoritmos do curso:
+
+#### Lazy Learner (Aprendizado Preguiçoso)
+
+O KNN praticamente **não tem fase de treinamento**. Durante o treino, ele simplesmente **memoriza** (armazena) todo o conjunto de dados na memória. Todo o trabalho computacional pesado acontece apenas na hora da **predição** — quando um novo dado chega.
+
+```
+TREINO (KNN):    Apenas armazena os dados → custo ≈ O(1)
+PREDIÇÃO (KNN):  Calcula distância para TODOS os pontos → custo = O(n × d)
+                 onde n = amostras no treino, d = dimensionalidade
+```
+
+**Contraste com outros algoritmos:**
+
+| Algoritmo | Fase de Treino | Fase de Predição |
+|---|---|---|
+| Regressão Linear | Pesada (ajusta parâmetros) | Instantânea (y = wx + b) |
+| Random Forest | Pesada (treina 100+ árvores) | Moderada (percorre K árvores) |
+| SVM | Muito pesada (otimização quadrática) | Rápida (apenas vetores de suporte) |
+| **KNN** | **Instantânea (só memoriza)** | **Lenta (distância para todos)** |
+
+#### Não-Paramétrico
+
+O KNN **não faz nenhuma suposição matemática prévia** sobre a distribuição dos dados. Ele não assume que os dados são linearmente separáveis (como Regressão Logística), nem que seguem distribuição normal, nem que existe uma fronteira de decisão de forma específica.
+
+Isso o torna muito **flexível**: consegue capturar fronteiras de decisão arbitrariamente complexas e não-lineares, desde que haja dados suficientes na vizinhança.
+
+---
+
+### 11.3 Mecânica do Algoritmo — 4 Passos
+
+Para classificar um novo dado (não rotulado), o KNN executa 4 passos lógicos:
+
+```
+Novo dado (x_q) chega
+        │
+        ▼
+┌────────────────────────────────────────────────────┐
+│ 1. CÁLCULO                                          │
+│ Mede a distância de x_q para TODOS os n pontos     │
+│ do dataset de treino                               │
+│ d(x_q, x_i) para i = 1, 2, ..., n                 │
+└──────────────────────┬─────────────────────────────┘
+                       │
+                       ▼
+┌────────────────────────────────────────────────────┐
+│ 2. ORDENAÇÃO                                        │
+│ Classifica as n distâncias em ordem crescente       │
+│ (do mais próximo ao mais distante)                  │
+└──────────────────────┬─────────────────────────────┘
+                       │
+                       ▼
+┌────────────────────────────────────────────────────┐
+│ 3. SELEÇÃO                                          │
+│ Recorta os K primeiros pontos da lista ordenada     │
+│ → esses são os K-vizinhos mais próximos             │
+└──────────────────────┬─────────────────────────────┘
+                       │
+                       ▼
+┌────────────────────────────────────────────────────┐
+│ 4. DECISÃO                                          │
+│ Classificação: Votação majoritária (moda das classes│
+│                dos K vizinhos)                      │
+│ Regressão:     Média aritmética (ou mediana) do     │
+│                valor alvo dos K vizinhos            │
+└────────────────────────────────────────────────────┘
+```
+
+**Exemplo numérico (do slide do professor):**
+
+Novo ponto chega numa região com K = 11 vizinhos:
+- 7 vizinhos são da **classe Vermelha**
+- 3 vizinhos são da **classe Laranja**
+- 1 vizinho é da **classe Verde**
+
+→ Votação: Vermelho=7, Laranja=3, Verde=1 → **Predição: VERMELHO**
+
+| K | Efeito na Fronteira de Decisão | Risco |
+|---|---|---|
+| K = 1 | Ultra-complexa, recortada | Overfitting (alta variância) |
+| K = 3 | Moderadamente complexa | Baixo |
+| K = 11 | Mais suave | Equilíbrio razoável |
+| K = 100 | Muito suave, quase uma linha reta | Underfitting (alto viés) |
+
+---
+
+### 11.4 Métricas de Distância
+
+A escolha da métrica de distância é crítica para o KNN, pois **define quem são os "vizinhos"**.
+
+#### Fórmulas Dissecadas
+
+**1. Distância Euclidiana** (padrão, `p=2` em Scikit-Learn)
+
+$$d_E(\mathbf{x}, \mathbf{z}) = \sqrt{\sum_{j=1}^{n} (x_j - z_j)^2}$$
+
+| Símbolo | Significado |
+|---|---|
+| $\mathbf{x}, \mathbf{z}$ | Dois pontos no espaço de features |
+| $j$ | Índice da feature (dimensão) |
+| $n$ | Número de features (dimensões) |
+| $x_j - z_j$ | Diferença na feature $j$ |
+| $\sqrt{(\cdot)}$ | Raiz quadrada → distância em linha reta |
+
+**Quando usar:** Dados numéricos contínuos sem outliers extremos. É o Teorema de Pitágoras generalizado para n dimensões.
+
+**2. Distância Manhattan** (City Block, `p=1`)
+
+$$d_M(\mathbf{x}, \mathbf{z}) = \sum_{j=1}^{n} |x_j - z_j|$$
+
+**Quando usar:** Dados com muitos outliers (menos sensível a grandes diferenças em uma única dimensão), dados categóricos codificados, ou quando o movimento diagonal não faz sentido no domínio.
+
+**3. Distância de Minkowski** (generalização, `metric='minkowski', p=p`)
+
+$$d_p(\mathbf{x}, \mathbf{z}) = \left(\sum_{j=1}^{n} |x_j - z_j|^p\right)^{1/p}$$
+
+**Casos especiais:**
+- $p = 1$ → Manhattan
+- $p = 2$ → Euclidiana
+- $p \to \infty$ → Chebyshev (máxima diferença entre dimensões)
+
+#### Tabela Comparativa das Métricas
+
+| Métrica | Fórmula | Geometria | Ideal Para |
+|---|---|---|---|
+| Euclidiana | $\sqrt{\sum (x_j-z_j)^2}$ | Linha reta | Numérico contínuo, sem outliers |
+| Manhattan | $\sum |x_j - z_j|$ | Quarteirões de cidade | Outliers, dados esparsos |
+| Minkowski | $(\sum|x_j-z_j|^p)^{1/p}$ | Generalização | Ajuste fino via parâmetro p |
+| Chebyshev | $\max_j |x_j - z_j|$ | Movimento do rei no xadrez | Jogos, otimização de estoque |
+| Cosseno | $1 - \frac{\mathbf{x} \cdot \mathbf{z}}{||\mathbf{x}||||\mathbf{z}||}$ | Ângulo entre vetores | NLP, texto, dados de alta dimensão |
+| Hamming | Posições diferentes / total | Comparação bit a bit | Strings, dados binários/categóricos |
+| Haversine | Fórmula esférica | Arco na superfície da Terra | Dados geográficos (lat/lon) |
+
+---
+
+### 11.5 O Parâmetro K — Viés-Variância no KNN
+
+O valor de K é o **hiperparâmetro mais crítico** do KNN e controla diretamente o trade-off viés-variância.
+
+```
+K PEQUENO                              K GRANDE
+(ex: K=1)                              (ex: K=100)
+
+Fronteira de decisão:                  Fronteira de decisão:
+Ultra-recortada, complexa              Muito suave, quase linear
+↓                                      ↓
+Alta VARIÂNCIA                         Alto VIÉS
+→ Overfitting                          → Underfitting
+→ Sensível a ruído                     → Padrões locais ignorados
+→ Perfeito no treino                   → Ruim no treino e no teste
+→ Ruim no teste                        → Prevê sempre a classe majoritária
+```
+
+**Analogia:** K=1 é como perguntar a opinião de apenas 1 pessoa (pode ser um outlier); K=n é como perguntar a todos e sempre escolher a opinião da maioria geral.
+
+**Como encontrar o K ideal:**
+
+```python
+from sklearn.model_selection import GridSearchCV
+from sklearn.neighbors import KNeighborsClassifier
+
+param_grid = {'n_neighbors': range(1, 31, 2)}  # K ímpar evita empates
+grid = GridSearchCV(KNeighborsClassifier(), param_grid, cv=5, scoring='accuracy')
+grid.fit(X_treino, y_treino)
+print(f"Melhor K: {grid.best_params_}")
+```
+
+**Regras práticas:**
+- Sempre testar K ímpar (em classificação binária evita empates)
+- Ponto de partida comum: $K = \sqrt{n}$ onde n = número de amostras
+- Usar validação cruzada para escolher K definitivo
+
+---
+
+### 11.6 KNN Ponderado (Weighted KNN)
+
+No KNN clássico, todos os K vizinhos têm **igual peso** na votação, independentemente de quão perto ou longe estejam. O KNN Ponderado corrige isso:
+
+$$\hat{y} = \underset{c}{\arg\max} \sum_{i \in \mathcal{N}_K} w_i \cdot \mathbb{1}[y_i = c]$$
+
+Onde o peso de cada vizinho é inversamente proporcional à distância:
+
+$$w_i = \frac{1}{d(x_q, x_i)}$$
+
+| Aspecto | KNN Clássico (`weights='uniform'`) | KNN Ponderado (`weights='distance'`) |
+|---|---|---|
+| Peso de cada vizinho | Igual (1/K) para todos | Inversamente proporcional à distância |
+| Vizinho distante | Mesmo peso que o próximo | Menor influência |
+| Empates | Comum | Raramente ocorre |
+| Dados esparsos | Problemático | Mais robusto |
+| Scikit-Learn | `weights='uniform'` | `weights='distance'` |
+
+**Exemplo:** Se K=3 e as distâncias são [0.1, 0.5, 2.0] com classes [A, A, B]:
+- Clássico: 2 votos A, 1 voto B → **A**
+- Ponderado: w=[10, 2, 0.5] → A=12, B=0.5 → **A** (com muito mais confiança)
+
+---
+
+### 11.7 Radius Neighbors — KNN por Densidade
+
+O KNN tradicional tem um problema: em regiões esparsas do espaço de features, o algoritmo é forçado a buscar K vizinhos mesmo que todos sejam excessivamente distantes e não representem o padrão local.
+
+**Solução — Radius Neighbors Classifier:** substitui o parâmetro K por um **raio de distância limite** r:
+
+```
+KNN Tradicional:                    Radius Neighbors:
+"Me dê sempre K vizinhos"           "Me dê todos os vizinhos dentro do raio r"
+→ Forçado a pegar vizinhos          → Cluster denso → muitos vizinhos
+  distantes em áreas esparsas         Área esparsa → poucos (ou 0) vizinhos
+```
+
+| Região do Espaço | KNN (K fixo) | Radius Neighbors (r fixo) |
+|---|---|---|
+| Cluster denso | Apenas K dos muitos vizinhos próximos | Todos os vizinhos legítimos |
+| Área esparsa | Forçado a pegar vizinhos distantes | Poucos ou nenhum vizinho |
+| Comportamento | Uniforme (sempre K) | Adaptativo à densidade local |
+
+```python
+from sklearn.neighbors import RadiusNeighborsClassifier
+modelo_raio = RadiusNeighborsClassifier(radius=1.5, weights='distance')
+```
+
+---
+
+### 11.8 Cuidados Obrigatórios na Modelagem com KNN
+
+Por basear **100% das decisões em cálculos de distância**, o KNN exige dois pré-processamentos inegociáveis:
+
+#### Cuidado 1 — Escala dos Dados (OBRIGATÓRIO)
+
+**Problema:** Features com magnitudes diferentes dominam o cálculo.
+
+**Exemplo real:** Para prever crédito com as features `renda` (R$ 5.000–50.000) e `filhos` (0–5):
+
+$$d = \sqrt{(50000 - 5000)^2 + (3 - 2)^2} \approx 45000$$
+
+A feature `renda` domina completamente. O número de filhos é irrelevante para o KNN, mesmo que seja crucial para o problema.
+
+**Solução:** Normalização **antes** de aplicar o KNN.
+
+| Scaler | Fórmula | Quando usar |
+|---|---|---|
+| `StandardScaler` | $(x - \mu) / \sigma$ | Distribuição aproximadamente normal; outliers moderados |
+| `MinMaxScaler` | $(x - x_{min}) / (x_{max} - x_{min})$ | Limites conhecidos; sem outliers extremos |
+| `RobustScaler` | $(x - Q_2) / (Q_3 - Q_1)$ | Muitos outliers; mediana como centro |
+
+**Regra:** Sempre ajuste o scaler **apenas no treino** (`fit` no treino, `transform` no treino e teste).
+
+#### Cuidado 2 — Maldição da Dimensionalidade
+
+**Problema:** Com muitas features (alta dimensão), o espaço se torna tão vasto que a distância entre quase todos os pontos se torna similar — a noção de "vizinhança" perde significado.
+
+**Intuitivamente:** Em 2D, "próximo" é claro. Em 1000D, dois pontos aleatórios têm distâncias quase idênticas entre si → não há vizinhos "mais próximos" de verdade.
+
+**Consequência:** KNN degrada severamente com muitas features.
+
+**Soluções:**
+1. **PCA** (Seção 3) → reduzir para k componentes principais antes do KNN
+2. **Seleção de features** → Feature Importance da Random Forest + KNN
+3. **Limitar features** → manter apenas as mais relevantes ao problema
+
+```python
+from sklearn.decomposition import PCA
+from sklearn.pipeline import Pipeline
+from sklearn.neighbors import KNeighborsClassifier
+
+pipeline = Pipeline([
+    ('scaler', StandardScaler()),
+    ('pca', PCA(n_components=0.95)),  # manter 95% da variância
+    ('knn', KNeighborsClassifier(n_neighbors=5))
+])
+```
+
+---
+
+### 11.9 KNN para Detecção de Anomalias (Não-Supervisionado)
+
+Embora o KNN seja tradicionalmente supervisionado, sua arquitetura baseada em distâncias é usada para **detecção de anomalias** sem rótulos:
+
+**Lógica de isolamento:**
+1. Para cada ponto, calcular a distância até seus K vizinhos mais próximos
+2. Calcular a distância média dos K vizinhos: $\bar{d}_K(x_i)$
+3. Se $\bar{d}_K(x_i) \gg$ média geral do dataset → ponto **anômalo** (isolado)
+
+```python
+from sklearn.neighbors import NearestNeighbors
+import numpy as np
+
+knn = NearestNeighbors(n_neighbors=5)
+knn.fit(X)
+distancias, _ = knn.kneighbors(X)
+score_anomalia = distancias.mean(axis=1)  # maior score = mais isolado
+
+# Threshold: pontos com score > média + 2*desvio são anomalias
+threshold = score_anomalia.mean() + 2 * score_anomalia.std()
+anomalias = np.where(score_anomalia > threshold)[0]
+```
+
+**Comparação:** O KNN para anomalias é mais interpretável que Isolation Forest, mas mais lento em datasets grandes.
+
+---
+
+### 11.10 Prós e Contras Completos
+
+| Dimensão | Vantagem | Desvantagem |
+|---|---|---|
+| **Treinamento** | Instantâneo — apenas memoriza | — |
+| **Predição** | — | Lento — O(n × d) por predição |
+| **Memória** | — | Exige dataset completo na RAM |
+| **Interpretabilidade** | Alta — lógica transparente | — |
+| **Flexibilidade** | Não-paramétrico, fronteiras complexas | — |
+| **Escalabilidade** | — | Não escala bem para n > 100k |
+| **Dimensionalidade** | — | Maldição da dimensionalidade |
+| **Novas amostras** | Incorporadas imediatamente sem retreino | — |
+| **Normalização** | — | Obrigatória (dados brutos inviáveis) |
+| **Hiperparâmetros** | Poucos (K, métrica, pesos) | K sensível — errar K → overfitting/underfitting |
+
+**Quando usar KNN:**
+- Dataset pequeno a médio (< 50k amostras)
+- Poucas features (< 50, idealmente < 20 após PCA)
+- Fronteiras de decisão muito irregulares
+- Quando precisar de um baseline rápido de implementar
+- Prototipagem / comparação com modelos mais complexos
+
+**Quando NÃO usar KNN:**
+- Dataset muito grande (predição em tempo real impossível)
+- Alta dimensionalidade sem redução prévia
+- Recursos de memória limitados (precisa do dataset inteiro)
+- Features sem normalização disponível
+
+---
+
+### 11.11 Classes Scikit-Learn e Parâmetros
+
+| Classe | Uso |
+|---|---|
+| `KNeighborsClassifier` | Classificação com K fixo |
+| `KNeighborsRegressor` | Regressão com K fixo |
+| `RadiusNeighborsClassifier` | Classificação com raio fixo |
+| `RadiusNeighborsRegressor` | Regressão com raio fixo |
+| `NearestNeighbors` | Busca de vizinhos (sem predição — usado em anomalias, recomendação) |
+
+| Parâmetro | Padrão | Descrição |
+|---|---|---|
+| `n_neighbors` | 5 | Valor de K |
+| `weights` | `'uniform'` | `'uniform'` (igual) ou `'distance'` (ponderado) |
+| `metric` | `'minkowski'` | Métrica de distância |
+| `p` | 2 | Parâmetro de Minkowski (2 = Euclidiana) |
+| `algorithm` | `'auto'` | Estrutura de busca: `'ball_tree'`, `'kd_tree'`, `'brute'` |
+| `n_jobs` | 1 | `-1` usa todos os núcleos |
+| `leaf_size` | 30 | Tamanho da folha para BallTree/KDTree |
+
+---
+
+### 11.12 Código Python Completo
+
+**Cenário:** Sistema de recomendação de tipo de tratamento médico com base em histórico de pacientes. Comparação de K=1 vs K=5 vs K=optimal, uso de scaler, GridSearch e pipeline completo.
+
+```python
+import numpy as np
+from sklearn.datasets import load_wine
+from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_score
+from sklearn.preprocessing import StandardScaler
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.decomposition import PCA
+from sklearn.pipeline import Pipeline
+from sklearn.metrics import classification_report, accuracy_score, confusion_matrix
+
+# ── 1. CARREGAR DADOS ────────────────────────────────────────────────────────
+dados = load_wine()
+X, y = dados.data, dados.target
+print(f"Dataset Wine: {X.shape[0]} amostras, {X.shape[1]} features, {len(np.unique(y))} classes")
+
+X_treino, X_teste, y_treino, y_teste = train_test_split(
+    X, y, test_size=0.2, random_state=42, stratify=y
+)
+
+# ── 2. SEM NORMALIZAÇÃO (demonstrar o problema) ───────────────────────────────
+knn_sem_norm = KNeighborsClassifier(n_neighbors=5)
+knn_sem_norm.fit(X_treino, y_treino)
+acc_sem = accuracy_score(y_teste, knn_sem_norm.predict(X_teste))
+print(f"\nSem normalização: Acurácia = {acc_sem:.4f}")
+
+# ── 3. COM NORMALIZAÇÃO ───────────────────────────────────────────────────────
+scaler = StandardScaler()
+X_treino_norm = scaler.fit_transform(X_treino)  # fit+transform no treino
+X_teste_norm  = scaler.transform(X_teste)       # apenas transform no teste
+
+knn_com_norm = KNeighborsClassifier(n_neighbors=5)
+knn_com_norm.fit(X_treino_norm, y_treino)
+acc_com = accuracy_score(y_teste, knn_com_norm.predict(X_teste_norm))
+print(f"Com normalização: Acurácia = {acc_com:.4f}")
+print(f"Ganho com normalização: {(acc_com - acc_sem)*100:+.1f}%")
+
+# ── 4. EFEITO DO K — OVERFITTING vs UNDERFITTING ─────────────────────────────
+print("\nEfeito do K (com normalização, 5-fold CV):")
+print(f"{'K':<6} {'Treino':>10} {'Validação':>12} {'Diagnóstico':>15}")
+print("-" * 50)
+for k in [1, 3, 5, 9, 15, 25, 51]:
+    modelo = KNeighborsClassifier(n_neighbors=k, weights='uniform')
+    # Acurácia no treino
+    modelo.fit(X_treino_norm, y_treino)
+    acc_tr = accuracy_score(y_treino, modelo.predict(X_treino_norm))
+    # Acurácia em CV
+    scores_cv = cross_val_score(modelo, X_treino_norm, y_treino, cv=5)
+    acc_cv = scores_cv.mean()
+    # Diagnóstico
+    gap = acc_tr - acc_cv
+    diag = "Overfitting" if gap > 0.1 else ("Underfitting" if acc_cv < 0.7 else "OK")
+    print(f"K={k:<4} {acc_tr:>10.4f} {acc_cv:>12.4f} {diag:>15}")
+
+# ── 5. GRIDSEARCH — ENCONTRAR K E PESOS ÓTIMOS ───────────────────────────────
+param_grid = {
+    'n_neighbors': list(range(1, 21, 2)),  # K ímpares de 1 a 19
+    'weights': ['uniform', 'distance'],
+    'metric': ['euclidean', 'manhattan']
+}
+grid_search = GridSearchCV(
+    KNeighborsClassifier(),
+    param_grid,
+    cv=5,
+    scoring='accuracy',
+    n_jobs=-1
+)
+grid_search.fit(X_treino_norm, y_treino)
+print(f"\nGridSearch — Melhores parâmetros: {grid_search.best_params_}")
+print(f"Melhor score CV: {grid_search.best_score_:.4f}")
+
+# Avaliar no teste
+melhor_knn = grid_search.best_estimator_
+y_pred = melhor_knn.predict(X_teste_norm)
+print(f"Acurácia no teste (melhor KNN): {accuracy_score(y_teste, y_pred):.4f}")
+print("\nRelatório completo:")
+print(classification_report(y_teste, y_pred, target_names=dados.target_names))
+
+# ── 6. PIPELINE COMPLETO (prática profissional) ───────────────────────────────
+pipeline = Pipeline([
+    ('scaler', StandardScaler()),
+    ('pca', PCA(n_components=0.95)),       # manter 95% da variância
+    ('knn', KNeighborsClassifier(
+        n_neighbors=grid_search.best_params_['n_neighbors'],
+        weights=grid_search.best_params_['weights'],
+        metric=grid_search.best_params_['metric']
+    ))
+])
+pipeline.fit(X_treino, y_treino)
+acc_pipeline = accuracy_score(y_teste, pipeline.predict(X_teste))
+n_componentes = pipeline.named_steps['pca'].n_components_
+print(f"\nPipeline (Scaler + PCA + KNN):")
+print(f"  Features originais: {X.shape[1]} → PCA reteve: {n_componentes}")
+print(f"  Acurácia pipeline: {acc_pipeline:.4f}")
+
+# ── 7. DETECÇÃO DE ANOMALIAS ─────────────────────────────────────────────────
+from sklearn.neighbors import NearestNeighbors
+
+knn_anomalia = NearestNeighbors(n_neighbors=5, metric='euclidean')
+knn_anomalia.fit(X_treino_norm)
+distancias, _ = knn_anomalia.kneighbors(X_treino_norm)
+score_anomalia = distancias.mean(axis=1)
+
+threshold = score_anomalia.mean() + 2 * score_anomalia.std()
+idx_anomalias = np.where(score_anomalia > threshold)[0]
+print(f"\nDetecção de anomalias (KNN não-supervisionado):")
+print(f"  Threshold: {threshold:.4f}")
+print(f"  Anomalias detectadas: {len(idx_anomalias)} de {len(X_treino_norm)} pontos")
+```
+
+**Saída esperada (aproximada):**
+```
+Dataset Wine: 178 amostras, 13 features, 3 classes
+
+Sem normalização: Acurácia = 0.7222
+Com normalização: Acurácia = 0.9444
+Ganho com normalização: +22.2%
+
+Efeito do K (com normalização, 5-fold CV):
+K      Treino    Validação     Diagnóstico
+--------------------------------------------------
+K=1      1.0000       0.9014     Overfitting
+K=3      0.9577       0.9296              OK
+K=5      0.9296       0.9296              OK
+K=9      0.9085       0.9155              OK
+K=15     0.8944       0.9014              OK
+K=25     0.8662       0.8803              OK
+K=51     0.7817       0.7746     Underfitting
+
+GridSearch — Melhores parâmetros: {'metric': 'euclidean', 'n_neighbors': 7, 'weights': 'distance'}
+Melhor score CV: 0.9437
+Acurácia no teste (melhor KNN): 0.9722
+```
+
+---
+
+### 11.13 Questões no Estilo da Prova (Prof. Túlio Ribeiro)
+
+---
+
+**Questão 1**
+
+Um cientista de dados aplica KNN com K=5 em um dataset de preços de imóveis com as features: `área` (50–500 m²), `quartos` (1–5) e `distância_centro` (0–50 km). Sem normalização, o modelo tem acurácia de 62%. Após normalização com StandardScaler, a acurácia sobe para 87%. Qual é a explicação técnica correta?
+
+a) A normalização aumenta o K efetivo, consultando mais vizinhos e reduzindo o viés.
+b) Sem normalização, a feature `área` domina o cálculo de distância por ter magnitude muito maior, tornando `quartos` e `distância_centro` virtualmente invisíveis ao modelo.
+c) O StandardScaler remove outliers do dataset, melhorando a qualidade das amostras usadas no treino.
+d) A normalização transforma o KNN em um modelo paramétrico, permitindo que ele aprenda os parâmetros ótimos.
+
+**Resposta correta: B**
+
+- **A — ERRADO:** A normalização não altera o parâmetro K. O número de vizinhos consultados permanece 5.
+- **B — CORRETO:** Sem normalização, calcular $\sqrt{(400-50)^2 + (3-2)^2 + (10-5)^2} \approx 350$. A contribuição de `quartos` (diferença máxima ~4) e `distância_centro` (diferença máxima ~50) é negligenciável frente à `área` (diferença até 450). O KNN efetivamente usa apenas a `área` para decidir a vizinhança. Com StandardScaler, todas as features têm média 0 e desvio 1 → contribuições equilibradas.
+- **C — ERRADO:** StandardScaler não remove outliers. Ele transforma os dados para média zero e desvio padrão 1, mas pontos extremos continuam presentes (apenas reescalados).
+- **D — ERRADO:** A normalização não muda a natureza do algoritmo. KNN permanece não-paramétrico após a normalização — a decisão ainda é baseada em distância, não em parâmetros aprendidos.
+
+---
+
+**Questão 2**
+
+Um KNN com K=1 atinge 99% de acurácia no treino mas apenas 61% no teste. Um KNN com K=25 atinge 76% no treino e 74% no teste. Qual afirmação descreve corretamente essa situação?
+
+a) K=1 deve ser preferido por ter maior acurácia absoluta no treino; o teste ruim indica que o conjunto de teste é de baixa qualidade.
+b) K=1 sofre de overfitting (alta variância): memoriza os dados de treino mas não generaliza. K=25 pode estar no limite do underfitting mas generaliza razoavelmente.
+c) K=25 é sempre melhor que K=1 porque algoritmos com menor variância são matematicamente superiores.
+d) Ambos os modelos estão inadequados; a solução é reduzir K para próximo de zero para minimizar o viés.
+
+**Resposta correta: B**
+
+- **A — ERRADO:** 99% no treino e 61% no teste é o sinal clássico de overfitting. O modelo memorizou os dados de treino (K=1 → cada ponto é seu próprio vizinho → acurácia 100% no treino com 0 erros). A culpa não é do conjunto de teste.
+- **B — CORRETO:** Com K=1, o KNN cria uma fronteira de decisão ultra-complexa que se adapta perfeitamente a cada ponto de treino, incluindo ruído. No teste, qualquer pequena variação gera erros. K=25 tem fronteiras mais suaves: gap treino-teste de apenas 2%, indicando boa generalização (74% pode ser aceitável dependendo da tarefa).
+- **C — ERRADO:** Nem sempre menor variância é melhor — o trade-off viés-variância exige equilíbrio. K=25 pode ter viés alto demais para alguns problemas. "Sempre melhor" é incorreto.
+- **D — ERRADO:** K próximo de zero não existe (K mínimo é 1). Além disso, K=1 já demonstrou overfitting severo — diminuir ainda mais K é a direção oposta da solução.
+
+---
+
+**Questão 3**
+
+Em um dataset com 50.000 amostras e 200 features, um cientista avalia KNN e obtém predições extremamente lentas em produção e baixa acurácia. Qual intervenção resolve AMBOS os problemas simultaneamente?
+
+a) Aumentar K para 1000 para consultar mais vizinhos e melhorar a acurácia.
+b) Trocar `weights='uniform'` por `weights='distance'` para acelerar o cálculo de distâncias.
+c) Aplicar PCA antes do KNN para reduzir a dimensionalidade, aliviando a Maldição da Dimensionalidade (melhora acurácia) e reduzindo o custo computacional (melhora velocidade).
+d) Usar `algorithm='brute'` em vez de `algorithm='auto'` para garantir cálculo exato da distância.
+
+**Resposta correta: C**
+
+- **A — ERRADO:** Aumentar K de 5 para 1000 aumenta ainda mais o trabalho de ordenação e agregação, tornando a predição ainda mais lenta. E K muito alto tende a underfitting, não melhora a acurácia em datasets complexos.
+- **B — ERRADO:** `weights='distance'` muda apenas como os votos são ponderados, não o número de distâncias calculadas. O custo computacional de calcular distâncias contra 50.000 pontos em 200 dimensões permanece o mesmo.
+- **C — CORRETO:** PCA resolve ambos os problemas: (1) **Velocidade** — reduzir de 200 para ~20 componentes reduz o custo de cada distância em 10×; (2) **Acurácia** — com 200 features, a Maldição da Dimensionalidade faz com que todas as distâncias sejam semelhantes, invalidando a noção de vizinhança. PCA retém as dimensões de maior variância e elimina o ruído dimensional.
+- **D — ERRADO:** `algorithm='brute'` é o método mais lento (força bruta pura). `'kd_tree'` e `'ball_tree'` são estruturas de dados que aceleram a busca de vizinhos. Usar `'brute'` pioraria o problema de velocidade.
+
+---
+
+**Questão 4**
+
+Qual afirmação descreve corretamente a diferença entre KNN Clássico (`weights='uniform'`) e KNN Ponderado (`weights='distance'`)?
+
+a) O KNN Ponderado usa mais vizinhos que o clássico, consultando K × distância pontos ao total.
+b) No KNN Clássico, cada vizinho vota com peso 1/K; no Ponderado, o peso é inversamente proporcional à distância — vizinhos mais próximos têm mais influência.
+c) O KNN Ponderado resolve a Maldição da Dimensionalidade ao ponderar features pela sua importância.
+d) O KNN Clássico é sempre mais acurado que o ponderado por não sofrer instabilidade numérica quando a distância é próxima de zero.
+
+**Resposta correta: B**
+
+- **A — ERRADO:** Ambos consultam o mesmo número K de vizinhos. A diferença está apenas em como os votos são contados, não na quantidade de vizinhos.
+- **B — CORRETO:** No KNN Clássico com K=5, cada vizinho contribui com peso 1/5 = 0.2. No Ponderado, se as distâncias são [0.1, 0.2, 0.3, 0.4, 0.5], os pesos são [10, 5, 3.3, 2.5, 2] — o vizinho mais próximo tem 5× mais influência que o mais distante. Isso é especialmente útil em regiões de fronteira onde um vizinho muito próximo é um sinal mais confiável da classe correta.
+- **C — ERRADO:** O KNN Ponderado pondera os **vizinhos pela distância entre instâncias**, não as features pela importância. Feature importance é um conceito de seleção de features (como na Random Forest), não do mecanismo de votação do KNN.
+- **D — ERRADO:** Quando um vizinho está a distância ≈ 0, seu peso 1/0 → infinito, causando instabilidade numérica no KNN Ponderado. Scikit-Learn resolve isso adicionando um epsilon, mas a afirmação de que o clássico é "sempre mais acurado" é falsa — depende do dataset.
+
+---
+
+*Fim da Seção 11 — Guia de Estudos Completo (Seções 1–11)*
 
 ---
 
