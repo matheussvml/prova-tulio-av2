@@ -2564,6 +2564,447 @@ d) A normalização com `StandardScaler` é obrigatória na Árvore de Decisão;
 
 ---
 
-*Fim da Seção 8 — próxima seção: Aprendizado Ensemble*
+---
+
+## Seção 9 — Aprendizado Ensemble
+
+### 9.1 Visão Geral — A Sabedoria das Multidões
+
+O **Aprendizado Ensemble** parte de um princípio filosófico antigo: perguntar a milhares de pessoas aleatórias e agregar as respostas frequentemente supera a opinião de um único especialista. Esse conceito — chamado de *sabedoria das multidões* — foi formalizado por **Aristóteles → Francis Galton → James Surowiecki** e é o fundamento teórico dos métodos ensemble em ML.
+
+**Definições fundamentais:**
+
+| Termo | Significado |
+|---|---|
+| **Ensemble** | Grupo de preditores (classificadores ou regressores) |
+| **Aprendizado Ensemble** | Técnica que agrega previsões de múltiplos modelos |
+| **Método Ensemble** | Algoritmo específico de aprendizado ensemble |
+| **Weak Learner** | Preditor individualmente fraco (pouco melhor que aleatório) |
+| **Strong Learner** | Modelo final resultante da combinação de weak learners |
+
+**Princípio central:** ao agregar as previsões de um grupo de preditores, você obtém previsões **melhores** do que com o melhor preditor individual.
+
+---
+
+### 9.2 Por que Funciona?
+
+Modelos individuais sofrem de um de dois problemas:
+
+- **Viés alto (Underfitting):** modelo simples demais, não captura a complexidade dos dados.
+- **Variância alta (Overfitting):** modelo complexo demais, decora o treino, falha em dados novos.
+
+O ensemble equilibra esse trade-off:
+
+> Mesmo que cada weak learner cometa erros, a **probabilidade de que todos cometam o mesmo erro** é baixa. A agregação cancela erros descorrelacionados.
+
+**Resultado prático do Bagging:** cada preditor individual tem viés ligeiramente mais alto do que treinado no conjunto completo, mas a agregação **reduz tanto o viés quanto a variância** — especialmente a variância.
+
+---
+
+### 9.3 Classificadores de Votação
+
+A forma mais simples de ensemble combina múltiplos classificadores treinados sobre os **mesmos dados** (modelos diferentes) e agrega por votação.
+
+#### Hard Voting vs Soft Voting
+
+| Aspecto | Hard Voting | Soft Voting |
+|---|---|---|
+| **Mecanismo** | Conta votos de classe (moda) | Soma probabilidades por classe |
+| **Entrada usada** | Classe predita por cada modelo | `predict_proba` de cada modelo |
+| **Exemplo** | Clf1=A, Clf2=A, Clf3=B → **A** | P(A)=0,6+0,7+0,4=1,7 > P(B)=1,3 → **A** |
+| **Vantagem** | Simples, funciona com qualquer classificador | Mais preciso — usa confiança dos modelos |
+| **Desvantagem** | Ignora a confiança de cada preditor | Exige que todos os modelos tenham `predict_proba` |
+| **Sklearn** | `voting='hard'` | `voting='soft'` |
+
+**Exemplo numérico do Soft Voting:**
+```
+Clf1: P(A) = 0,60 | P(B) = 0,40
+Clf2: P(A) = 0,70 | P(B) = 0,30
+Clf3: P(A) = 0,40 | P(B) = 0,60
+────────────────────────────────
+Soma A = 1,70  |  Soma B = 1,30
+→ Previsão final: Classe A
+```
+
+**Lei dos Grandes Números:** os classificadores de votação baseiam-se na LGN — com mais preditores independentes, a média das previsões converge para o valor esperado real. Quanto mais preditores, mais estável e preciso o ensemble.
+
+---
+
+### 9.4 Bagging e Pasting
+
+Outra abordagem usa o **mesmo algoritmo base** para cada preditor, mas treina cada um em **subconjuntos aleatórios diferentes** dos dados.
+
+#### Diferença fundamental
+
+| Característica | **Bagging** | **Pasting** |
+|---|---|---|
+| Nome completo | Bootstrap Aggregating | Pasting |
+| Amostragem | **Com reposição** (bootstrap) | **Sem reposição** |
+| Instâncias repetidas | Sim, no mesmo preditor | Não (cada instância aparece ≤1x por preditor) |
+| Objetivo | Reduzir variância, evitar overfitting | Reduzir variância (menos diversidade) |
+| Uso prático | Mais comum (Random Forest usa Bagging) | Menos comum |
+
+**Analogia do Bagging:** imagine um baralho de 10 cartas. Você retira uma, anota e **devolve antes da próxima retirada** — a mesma carta pode ser sorteada várias vezes.
+
+#### Função de Agregação
+
+| Tarefa | Função de Agregação |
+|---|---|
+| Classificação | **Moda** (hard voting) |
+| Regressão | **Média** dos valores preditos |
+
+**Por que Bagging/Pasting escalam bem?** Os preditores são treinados em **paralelo** (diferentes CPUs ou servidores), e as previsões também podem ser feitas em paralelo — escalabilidade excelente.
+
+**Efeito na curva viés-variância:**
+- Cada preditor individual: viés ligeiramente mais alto (subconjunto menor)
+- Conjunto agregado: viés semelhante ao modelo único, mas **variância significativamente menor**
+
+---
+
+### 9.5 Boosting
+
+O Boosting converte vários **weak learners** em um único **strong learner**, com objetivo central de **reduzir o viés** (ao contrário do Bagging, que foca na variância).
+
+**Diferença crítica frente ao Bagging:** o Boosting opera de forma **sequencial** — cada novo preditor foca nos erros do anterior.
+
+#### 9.5.1 Weak Learners e Decision Stumps
+
+- **Weak learner:** preditor com desempenho apenas ligeiramente melhor que aleatoriedade.
+- **Decision Stump:** árvore de decisão com `max_depth=1` — apenas **uma única divisão**.
+- **Por que usar stumps?** Raramente sofrem overfitting. A força do modelo final vem da **combinação inteligente** de centenas de modelos simples, não da complexidade de um único.
+
+#### 9.5.2 AdaBoost (Adaptive Boosting)
+
+A correção sequencial no AdaBoost ocorre via **ajuste de pesos das instâncias**:
+
+```
+PASSO 1: Treinar Classificador Base → avaliar previsões
+PASSO 2: Aumentar peso das instâncias classificadas INCORRETAMENTE
+PASSO 3: Treinar próximo classificador com pesos atualizados
+PASSO 4: Repetir N vezes
+RESULTADO: Soma ponderada (modelos mais precisos têm maior peso)
+```
+
+**Fluxo visual:**
+```
+Dataset original
+    ↓
+Weak Learner #1 → classifica → errou alguns pontos
+    ↓ (pontos errados ganham peso maior)
+Weighted Dataset
+    ↓
+Weak Learner #2 → foca nos casos difíceis
+    ↓
+... repete ...
+    ↓
+Strong Learner (combinação ponderada de todos)
+```
+
+#### 9.5.3 Gradient Boosting (GBM)
+
+Em vez de ajustar pesos de instâncias, o GBM usa **gradiente descendente sobre os erros residuais**:
+
+```
+PASSO 1: Modelo 1 faz previsão y_hat₁
+PASSO 2: Calcular resíduo r₁ = y - y_hat₁
+PASSO 3: Modelo 2 aprende a prever r₁
+PASSO 4: Previsão atualizada: y_hat₂ = y_hat₁ + η·r₂
+PASSO 5: Calcular novo resíduo r₂ = y - y_hat₂
+PASSO N: Previsão final = soma ponderada de todos os modelos
+```
+
+Onde **η (learning rate)** controla a contribuição de cada modelo (taxa de aprendizado).
+
+**Derivações modernas do GBM** (vencedores de Kaggle):
+
+| Algoritmo | Características |
+|---|---|
+| **XGBoost** | Regularização L1/L2, poda de árvores, paralelismo em colunas |
+| **LightGBM** | Cresce a árvore por folhas (leaf-wise), muito rápido em dados grandes |
+| **CatBoost** | Trata variáveis categóricas nativamente, ordered boosting |
+
+#### Comparação AdaBoost vs Gradient Boosting
+
+| Aspecto | AdaBoost | Gradient Boosting |
+|---|---|---|
+| **Mecanismo de correção** | Ajusta **pesos das instâncias** | Aprende os **resíduos** diretamente |
+| **Base teórica** | Votação adaptativa | Gradiente descendente no espaço funcional |
+| **Sensibilidade a outliers** | Alta (outliers ganham peso crescente) | Moderada (depende da função de perda) |
+| **Hiperparâmetro chave** | `n_estimators`, `learning_rate` | `n_estimators`, `learning_rate`, `max_depth` |
+| **Sklearn** | `AdaBoostClassifier` | `GradientBoostingClassifier` |
+| **Previsão final** | Soma ponderada (peso = precisão do modelo) | Soma ponderada (cada modelo prevê o resíduo) |
+
+---
+
+### 9.6 Stacking (Stacked Generalization)
+
+O Stacking combina modelos de **naturezas completamente diferentes** (heterogêneo), introduzindo um modelo de agregação inteligente chamado **Blender** (ou Meta-modelo).
+
+#### Fluxo do Stacking
+
+```
+Conjunto de Treino
+    ↓ (dividido em 2 subconjuntos)
+Subset 1 ──────────→ Treina modelos base (Layer 1)
+                      ex: SVM, Regressão Logística, KNN
+
+Subset 2 ──────────→ Modelos base fazem previsões
+                      (dados nunca vistos → previsões "limpas")
+                      ↓
+                   Novo dataset: features = previsões da Layer 1
+                      ↓
+                   Treina o BLENDER (Meta-modelo)
+
+Nova instância:
+    → Layer 1 prevê → previsões viram features → Blender faz previsão final
+```
+
+#### Por que usar Hold-out Set para treinar o Blender?
+
+Se o Blender fosse treinado com as mesmas previsões usadas para treinar a Layer 1, os modelos base estariam "decorando" seus próprios erros — causando **data leakage** e overfitting do meta-modelo.
+
+#### Stacking Multicamadas
+
+| Camada | Função |
+|---|---|
+| **Layer 1** | Modelos base (SVM, KNN, Reg. Logística...) — treinados no Subset 1 |
+| **Layer 2** | Blenders intermediários — treinados nas previsões do Layer 1 (Subset 2) |
+| **Layer 3** | Meta-modelo final — treinado nas previsões do Layer 2 (Subset 3) |
+
+**Regra:** para N camadas, o conjunto de treino deve ser dividido em N+1 subconjuntos.
+
+---
+
+### 9.7 Tabela Comparativa — As Famílias do Ensemble
+
+| Característica | Bagging & Pasting | Boosting | Stacking |
+|---|---|---|---|
+| **Arquitetura** | Homogênea (mesmo modelo base) | Homogênea (mesmo modelo base) | Heterogênea (modelos diferentes) |
+| **Treinamento** | Paralelo (independentes) | Sequencial (um corrige o outro) | Camadas (base paralela, blender depois) |
+| **Objetivo principal** | Reduzir Variância (evitar overfitting) | Reduzir Viés (fracos → fortes) | Combinação ótima de diferentes modelos |
+| **Agregação final** | Votação simples ou Média | Soma Ponderada (melhor modelo → maior peso) | Meta-modelo (Blender aprende a combinação) |
+| **Exemplos clássicos** | Random Forest | AdaBoost, XGBoost, LightGBM | Arquitetura customizada |
+| **Paralelizável?** | Sim | Não (dependência sequencial) | Parcialmente (Layer 1 sim, Blender não) |
+| **Risco principal** | Viés residual | Overfitting (muitos estimadores) | Data leakage se hold-out não for usado |
+| **Sklearn** | `BaggingClassifier` | `AdaBoostClassifier`, `GradientBoostingClassifier` | `StackingClassifier` |
+
+---
+
+### 9.8 Código Python — Ensemble Completo (Cenário: Detecção de Fraude)
+
+```python
+import numpy as np
+from sklearn.datasets import make_classification
+from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.ensemble import (
+    VotingClassifier, BaggingClassifier, AdaBoostClassifier,
+    GradientBoostingClassifier, StackingClassifier
+)
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.svm import SVC
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.metrics import classification_report, roc_auc_score
+
+# ── Dados sintéticos: detecção de fraude (binário, desbalanceado) ──
+np.random.seed(42)
+X, y = make_classification(
+    n_samples=2000, n_features=10, n_informative=6,
+    n_redundant=2, weights=[0.85, 0.15], random_state=42
+)
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42, stratify=y
+)
+
+# ══════════════════════════════════════════════════════
+# 1. VOTING CLASSIFIER — Hard e Soft Voting
+# ══════════════════════════════════════════════════════
+lr  = LogisticRegression(max_iter=1000, random_state=42)
+svm = SVC(probability=True, random_state=42)     # probability=True para soft voting
+dt  = DecisionTreeClassifier(max_depth=4, random_state=42)
+
+hard_voting = VotingClassifier(
+    estimators=[('lr', lr), ('svm', svm), ('dt', dt)],
+    voting='hard'
+)
+soft_voting = VotingClassifier(
+    estimators=[('lr', lr), ('svm', svm), ('dt', dt)],
+    voting='soft'
+)
+
+hard_voting.fit(X_train, y_train)
+soft_voting.fit(X_train, y_train)
+
+print("=== Voting Classifiers ===")
+print(f"Hard Voting AUC: {roc_auc_score(y_test, hard_voting.predict(X_test)):.4f}")
+print(f"Soft Voting AUC: {roc_auc_score(y_test, soft_voting.predict_proba(X_test)[:,1]):.4f}")
+
+# ══════════════════════════════════════════════════════
+# 2. BAGGING — com Decision Tree base
+# ══════════════════════════════════════════════════════
+bagging = BaggingClassifier(
+    estimator=DecisionTreeClassifier(random_state=42),
+    n_estimators=100,
+    max_samples=0.8,        # 80% das instâncias por bootstrap
+    bootstrap=True,         # com reposição = Bagging
+    n_jobs=-1,
+    random_state=42
+)
+bagging.fit(X_train, y_train)
+bagging_auc = roc_auc_score(y_test, bagging.predict_proba(X_test)[:,1])
+print(f"\nBagging (100 DTs) AUC: {bagging_auc:.4f}")
+
+# Pasting: bootstrap=False
+pasting = BaggingClassifier(
+    estimator=DecisionTreeClassifier(random_state=42),
+    n_estimators=100,
+    bootstrap=False,        # sem reposição = Pasting
+    n_jobs=-1,
+    random_state=42
+)
+pasting.fit(X_train, y_train)
+pasting_auc = roc_auc_score(y_test, pasting.predict_proba(X_test)[:,1])
+print(f"Pasting (100 DTs) AUC: {pasting_auc:.4f}")
+
+# ══════════════════════════════════════════════════════
+# 3. ADABOOST — stumps sequenciais com ajuste de pesos
+# ══════════════════════════════════════════════════════
+ada = AdaBoostClassifier(
+    estimator=DecisionTreeClassifier(max_depth=1),  # Decision Stump
+    n_estimators=200,
+    learning_rate=0.5,
+    random_state=42
+)
+ada.fit(X_train, y_train)
+ada_auc = roc_auc_score(y_test, ada.predict_proba(X_test)[:,1])
+print(f"\nAdaBoost (200 stumps, lr=0.5) AUC: {ada_auc:.4f}")
+
+# ══════════════════════════════════════════════════════
+# 4. GRADIENT BOOSTING — aprende resíduos iterativamente
+# ══════════════════════════════════════════════════════
+gbm = GradientBoostingClassifier(
+    n_estimators=200,
+    learning_rate=0.05,     # taxa de aprendizado (η)
+    max_depth=3,            # árvores rasas para reduzir overfitting
+    subsample=0.8,          # Stochastic GB: 80% dos dados por iteração
+    random_state=42
+)
+gbm.fit(X_train, y_train)
+gbm_auc = roc_auc_score(y_test, gbm.predict_proba(X_test)[:,1])
+print(f"GBM (200 est., lr=0.05, depth=3) AUC: {gbm_auc:.4f}")
+
+# Importância das features no GBM
+feature_importance = gbm.feature_importances_
+top3_idx = np.argsort(feature_importance)[::-1][:3]
+print("\nTop 3 features (GBM):")
+for i in top3_idx:
+    print(f"  Feature {i}: {feature_importance[i]:.4f}")
+
+# ══════════════════════════════════════════════════════
+# 5. STACKING — blender aprende a combinar modelos base
+# ══════════════════════════════════════════════════════
+estimadores_base = [
+    ('lr',  LogisticRegression(max_iter=1000, random_state=42)),
+    ('knn', KNeighborsClassifier(n_neighbors=5)),
+    ('dt',  DecisionTreeClassifier(max_depth=4, random_state=42)),
+]
+blender = LogisticRegression(max_iter=1000, random_state=42)
+
+stacking = StackingClassifier(
+    estimators=estimadores_base,
+    final_estimator=blender,
+    cv=5,              # cross-val para gerar previsões "limpas" (evita data leakage)
+    passthrough=False  # blender só recebe previsões da Layer 1
+)
+stacking.fit(X_train, y_train)
+stack_auc = roc_auc_score(y_test, stacking.predict_proba(X_test)[:,1])
+print(f"\nStacking (LR+KNN+DT → LR blender) AUC: {stack_auc:.4f}")
+
+# ══════════════════════════════════════════════════════
+# 6. COMPARAÇÃO FINAL
+# ══════════════════════════════════════════════════════
+print("\n" + "="*50)
+print("COMPARAÇÃO DE AUC — Detecção de Fraude")
+print("="*50)
+modelos = {
+    'Hard Voting':     roc_auc_score(y_test, hard_voting.predict(X_test)),
+    'Soft Voting':     roc_auc_score(y_test, soft_voting.predict_proba(X_test)[:,1]),
+    'Bagging':         bagging_auc,
+    'Pasting':         pasting_auc,
+    'AdaBoost':        ada_auc,
+    'Gradient Boost':  gbm_auc,
+    'Stacking':        stack_auc,
+}
+for nome, auc in sorted(modelos.items(), key=lambda x: -x[1]):
+    print(f"  {nome:<20} AUC = {auc:.4f}")
+```
+
+---
+
+### 9.9 Questões no Estilo da Prova
+
+**Questão 1.** Um cientista de dados treina 5 classificadores independentes (Regressão Logística, SVM, Árvore de Decisão, KNN e Naive Bayes), cada um com acurácia de 75%. Ele combina as previsões escolhendo a classe mais votada. Qual método ele está usando, e por que o resultado tende a ser melhor que 75%?
+
+**(a)** Boosting — porque cada modelo corrige os erros do anterior sequencialmente.
+**(b)** Hard Voting — porque a Lei dos Grandes Números garante que a moda de previsões independentes converge para a classe correta.
+**(c)** Soft Voting — porque as probabilidades são somadas, dando mais peso a modelos confiantes.
+**(d)** Stacking — porque um meta-modelo aprende a combinar as previsões de forma ótima.
+
+**Resposta: (b)**
+- **(a) Incorreta.** Boosting é sequencial e usa um único tipo de modelo base com ajuste de pesos/resíduos. O cenário descrito usa modelos independentes de tipos diferentes.
+- **(b) Correta.** Escolher a classe **mais votada (moda)** é exatamente o **Hard Voting**. Com classificadores independentes que cada um erra em casos diferentes, a probabilidade de a maioria errar simultaneamente é baixa — isso é a Lei dos Grandes Números aplicada ao ensemble.
+- **(c) Incorreta.** Soft Voting soma **probabilidades** (`predict_proba`), não conta votos de classe. O enunciado diz "classe mais votada", que é Hard Voting.
+- **(d) Incorreta.** Stacking usa um meta-modelo (Blender) treinado nas previsões dos modelos base em um hold-out set. O cenário não menciona nada disso — é uma simples votação por maioria.
+
+---
+
+**Questão 2.** No contexto de Bagging, um conjunto de dados com 1.000 amostras gera subconjuntos bootstrap de 1.000 amostras cada (com reposição). Qual afirmação está correta sobre esses subconjuntos?
+
+**(a)** Cada subconjunto contém exatamente as 1.000 amostras originais, apenas em ordem diferente.
+**(b)** Em média, cerca de 63,2% das amostras originais aparecem em cada subconjunto bootstrap, e as demais (~36,8%) podem ser usadas como conjunto de validação Out-of-Bag.
+**(c)** O subconjunto bootstrap garante que nenhuma amostra se repita dentro do mesmo preditor, distinguindo-se assim do Pasting.
+**(d)** O Bagging usa amostragem sem reposição, enquanto o Pasting usa com reposição.
+
+**Resposta: (b)**
+- **(a) Incorreta.** Com reposição, algumas amostras aparecem múltiplas vezes e outras não aparecem. Não é apenas uma reordenação.
+- **(b) Correta.** A probabilidade de uma amostra **não** ser selecionada em uma tentativa é `(1 - 1/n)`. Para n amostras com n sorteios, isso converge para `e⁻¹ ≈ 36,8%`. Portanto, ~63,2% aparecem e ~36,8% ficam de fora — estas últimas formam o **Out-of-Bag (OOB) set**, que pode ser usado como validação gratuita sem necessidade de um conjunto separado.
+- **(c) Incorreta.** É exatamente o contrário: no **Bagging** (com reposição), a mesma amostra *pode* aparecer múltiplas vezes no mesmo preditor. É o **Pasting** (sem reposição) que garante que cada amostra apareça no máximo uma vez por preditor.
+- **(d) Incorreta.** Invertido. **Bagging = com reposição (bootstrap)**. **Pasting = sem reposição**.
+
+---
+
+**Questão 3.** Sobre AdaBoost e Gradient Boosting, qual é a diferença fundamental na forma como cada um corrige os erros do modelo anterior?
+
+**(a)** AdaBoost treina modelos em paralelo enquanto Gradient Boosting os treina sequencialmente.
+**(b)** AdaBoost aumenta os **pesos das instâncias** mal classificadas; Gradient Boosting treina cada novo modelo para prever os **resíduos** do modelo anterior.
+**(c)** AdaBoost usa árvores profundas (max_depth=10) enquanto Gradient Boosting usa stumps (max_depth=1).
+**(d)** AdaBoost reduz o viés do modelo; Gradient Boosting reduz a variância.
+
+**Resposta: (b)**
+- **(a) Incorreta.** Ambos são **sequenciais** — essa é a característica fundamental do Boosting. O treinamento paralelo é característica do Bagging.
+- **(b) Correta.** Essa é a distinção central cobrada em prova: **AdaBoost** corrige erros ajustando os **pesos das instâncias de treinamento** (exemplos errados ficam "mais pesados" para o próximo modelo). **Gradient Boosting** corrige erros treinando o próximo modelo para prever diretamente os **resíduos** (y − ŷ), usando gradiente descendente no espaço funcional. XGBoost, LightGBM e CatBoost são variantes modernas do GBM.
+- **(c) Incorreta.** É o contrário: **AdaBoost** tipicamente usa **Decision Stumps** (max_depth=1) como weak learners. O Gradient Boosting usa árvores rasas, mas não necessariamente stumps — max_depth=3 é comum.
+- **(d) Incorreta.** **Ambos** têm como objetivo principal a **redução do viés** (transformar weak learners em strong learner). A redução de variância é objetivo do **Bagging**.
+
+---
+
+**Questão 4.** Um engenheiro de ML implementa um Stacking com três modelos base (SVM, KNN e Regressão Logística) e um Blender (outra Regressão Logística). Ele treina todos os modelos no conjunto de treinamento completo e usa as previsões desses mesmos dados para treinar o Blender. Qual é o problema dessa abordagem?
+
+**(a)** Stacking exige que todos os modelos base sejam do mesmo tipo; usar SVM, KNN e Regressão Logística juntos é inválido.
+**(b)** O Blender sofrerá **data leakage** — ele é treinado em previsões otimistas (os modelos base "memorizaram" esses dados), resultando em overfitting e baixo desempenho em dados novos.
+**(c)** O número de modelos base é insuficiente; Stacking exige pelo menos 10 estimadores na Layer 1.
+**(d)** Regressão Logística não pode ser usada como Blender — o meta-modelo deve ser sempre uma Árvore de Decisão.
+
+**Resposta: (b)**
+- **(a) Incorreta.** O Stacking é **heterogêneo por design** — sua vantagem é exatamente combinar modelos de naturezas completamente diferentes (SVM, KNN, Regressão Logística etc.). Isso é correto e desejável.
+- **(b) Correta.** Se os modelos base são treinados e avaliados **nos mesmos dados**, suas previsões serão artificialmente boas (overfitting nos dados de treino). O Blender aprende a combinar previsões irrealisticamente precisas, e falha em dados novos. A solução correta é usar um **hold-out set** ou **cross-validation** (como faz o `StackingClassifier` do sklearn com `cv=5`) para garantir que o Blender aprenda com previsões "limpas" — feitas em dados que os modelos base nunca viram.
+- **(c) Incorreta.** Não existe requisito mínimo de 10 estimadores para Stacking. Até 2 modelos base já formam um Stacking válido.
+- **(d) Incorreta.** O meta-modelo (Blender) pode ser qualquer algoritmo de ML — Regressão Logística, Árvore de Decisão, SVM, etc. Regressão Logística é inclusive uma escolha clássica e eficiente para o Blender.
+
+---
+
+*Fim da Seção 9 — próxima seção: Florestas Aleatórias*
+
+---
 
 ---
