@@ -3003,7 +3003,459 @@ for nome, auc in sorted(modelos.items(), key=lambda x: -x[1]):
 
 ---
 
-*Fim da Seção 9 — próxima seção: Florestas Aleatórias*
+---
+
+## Seção 10 — Florestas Aleatórias (Random Forest)
+
+### 10.1 Conceito e Definição
+
+**O que é?**
+A Floresta Aleatória (Random Forest) é um algoritmo de aprendizado supervisionado que cria uma **floresta** de várias Árvores de Decisão **independentes** para resolver problemas de classificação e regressão.
+
+**Por que funciona?**
+Baseia-se no princípio de Ensemble: ao agregar previsões de muitos modelos individuais (árvores), obtém-se um modelo global **muito mais robusto e com menor variância** do que qualquer árvore isolada.
+
+**Analogia:** Imagine consultar 500 médicos especialistas (cada um com experiência em subconjuntos diferentes de pacientes) e tomar a decisão pela maioria — muito mais confiável do que consultar apenas um.
+
+| Conceito | Descrição |
+|---|---|
+| Ensemble | Grupo de preditores treinados em subconjuntos diferentes |
+| Árvore base | DecisionTree com profundidade irrestrita (pode crescer completa) |
+| Aleatoriedade | Duas fontes: nas amostras (Bootstrap) e nos atributos (Feature Sampling) |
+| Agregação | Moda (classificação) ou Média (regressão) |
+| Paralelismo | Todas as árvores treinadas independentemente em paralelo |
+
+---
+
+### 10.2 As Duas Fontes de Aleatoriedade
+
+O grande diferencial da Floresta Aleatória em relação ao Bagging simples é introduzir **duas camadas de aleatoriedade**:
+
+#### Fonte 1 — Bootstrap (Aleatoriedade nas Amostras)
+
+Para cada árvore, o algoritmo amostra o dataset original **com reposição**:
+
+- Cada subconjunto tem o mesmo tamanho do dataset original (n amostras)
+- ~**63,2%** das amostras aparecem ao menos uma vez por subconjunto
+- ~**36,8%** ficam de fora → chamados **Out-of-Bag (OOB)**
+- Os dados OOB servem como validação gratuita sem necessidade de holdout separado
+
+```
+Dataset original: [x1, x2, x3, x4, x5, x6, x7, x8, x9, x10]
+
+Bootstrap 1:  [x8, x6, x2, x9, x5, x8, x1, x4, x8, x2] → OOB: {x3, x7, x10}
+Bootstrap 2:  [x10, x1, x3, x5, x1, x7, x4, x2, x1, x8] → OOB: {x6, x9}
+Bootstrap 3:  [x6, x5, x4, x1, x2, x4, x2, x6, x9, x2] → OOB: {x3, x7, x8, x10}
+```
+
+**Estimativa OOB:** cada amostra é classificada pelas árvores que **não** a usaram no treino. A média dessas predições é o **OOB Score** — equivalente a uma validação cruzada "grátis".
+
+#### Fonte 2 — Feature Sampling (Aleatoriedade nos Atributos)
+
+Em **cada nó** de cada árvore, o algoritmo **sorteia um subconjunto aleatório de atributos** e só considera esses para escolher a melhor divisão:
+
+| Problema | Padrão do parâmetro `max_features` |
+|---|---|
+| Classificação | `sqrt(p)` — raiz quadrada do total de features |
+| Regressão | `1.0` (todas) ou `sqrt(p)` |
+| Extra-Trees | Limiar aleatório em vez de busca do melhor corte |
+
+**Por que isso importa?** Se há uma feature muito dominante (ex: "renda" para prever crédito), em árvores normais ela apareceria na raiz de todas as árvores → todas ficariam correlacionadas → não haveria diversidade. Com `max_features=sqrt(p)`, às vezes essa feature não está disponível no nó, forçando a árvore a explorar outros padrões.
+
+| Fonte de Aleatoriedade | O que varia entre árvores | Benefício |
+|---|---|---|
+| Bootstrap | Quais instâncias são usadas | Reduz covariância entre árvores |
+| Feature Sampling | Quais atributos disponíveis em cada nó | Descorrelaciona estrutura das árvores |
+| Combinação das duas | Amostras + atributos | Máxima diversidade → menor variância |
+
+---
+
+### 10.3 Arquitetura de Treinamento (4 Etapas)
+
+```
+Dataset Original
+       │
+       ▼
+┌──────────────────────────────────────────────┐
+│  1. SELEÇÃO — Bootstrap                       │
+│  Para cada árvore k:                          │
+│  • Amostrar n instâncias com reposição        │
+│  • ~37% ficam OOB (validação gratuita)        │
+└──────────────┬───────────────────────────────┘
+               │
+               ▼
+┌──────────────────────────────────────────────┐
+│  2. CRESCIMENTO — Feature Sampling em cada nó │
+│  Para cada nó de cada árvore:                 │
+│  • Sortear sqrt(p) features                   │
+│  • Escolher melhor split dentre essas         │
+│  • Crescer a árvore sem poda (profunda)       │
+└──────────────┬───────────────────────────────┘
+               │
+               ▼
+┌──────────────────────────────────────────────┐
+│  3. PREVISÃO — Paralela e Independente        │
+│  Cada árvore gera sua predição individual     │
+│  sem comunicação com as outras                │
+└──────────────┬───────────────────────────────┘
+               │
+               ▼
+┌──────────────────────────────────────────────┐
+│  4. AGREGAÇÃO — Decisão Final                 │
+│  Classificação: Moda (votação majoritária)    │
+│  Regressão:     Média aritmética das saídas   │
+└──────────────────────────────────────────────┘
+```
+
+| Etapa | Ação | Parâmetro Scikit-Learn |
+|---|---|---|
+| Seleção | Bootstrap com reposição | `bootstrap=True` (padrão) |
+| N.º de árvores | Quantas árvores na floresta | `n_estimators=100` |
+| Crescimento | Profundidade máxima da árvore | `max_depth=None` (irrestrito) |
+| Feature Sampling | Atributos sorteados por nó | `max_features='sqrt'` |
+| Avaliação OOB | Score sem holdout | `oob_score=True` |
+| Paralelismo | Usar todos os núcleos | `n_jobs=-1` |
+
+---
+
+### 10.4 Feature Importance — Importância dos Atributos
+
+Um dos maiores diferenciais da Floresta Aleatória é fornecer **Feature Importance**: uma medida de qual atributo mais contribui para as predições.
+
+**Como é calculada:**
+
+$$\text{Importance}(j) = \frac{1}{K} \sum_{k=1}^{K} \sum_{\text{nó } t \in T_k \text{ que usa } j} \frac{n_t}{n} \cdot \Delta\text{impureza}(t)$$
+
+| Símbolo | Significado |
+|---|---|
+| $K$ | Número total de árvores |
+| $k$ | Índice de uma árvore específica |
+| $t$ | Nó que usa o atributo $j$ para dividir |
+| $n_t$ | Número de amostras que chegam ao nó $t$ |
+| $n$ | Total de amostras no dataset |
+| $\Delta\text{impureza}(t)$ | Redução de Gini (ou Entropia) no nó $t$ |
+
+**Em palavras:** "quanto impureza (em média, ponderada pelo número de amostras) o atributo $j$ reduz ao longo de todas as árvores?"
+
+**Exemplo — Dataset Iris (500 árvores):**
+
+| Atributo | Importância |
+|---|---|
+| petal length (cm) | **0.441** ← mais importante |
+| petal width (cm) | **0.423** ← segundo mais importante |
+| sepal length (cm) | 0.112 |
+| sepal width (cm) | 0.023 ← menos importante |
+
+**Interpretação:** Pétalas (comprimento e largura) dominam a classificação das espécies de Iris; sépalas contribuem pouco.
+
+**Uso prático no estilo do Prof. Túlio:**
+- Selecionar as `k` features mais importantes → reduzir dimensionalidade
+- Diagnosticar se uma variável está dominando excessivamente → correlação espúria
+- Justificar quais variáveis incluir em um modelo mais simples (logística, por ex.)
+
+```python
+# Exemplo de leitura da importância
+from sklearn.datasets import load_iris
+from sklearn.ensemble import RandomForestClassifier
+
+iris = load_iris()
+rnd_clf = RandomForestClassifier(n_estimators=500, n_jobs=-1, random_state=42)
+rnd_clf.fit(iris["data"], iris["target"])
+
+for name, score in zip(iris["feature_names"], rnd_clf.feature_importances_):
+    print(f"{name}: {score:.4f}")
+# sepal length (cm): 0.1125
+# sepal width (cm):  0.0231
+# petal length (cm): 0.4410   ← dominante
+# petal width (cm):  0.4234
+```
+
+---
+
+### 10.5 Extra-Trees (Árvores Extremamente Aleatórias)
+
+As **Extra-Trees** (Extremely Randomized Trees) são uma variação da Floresta Aleatória que eleva ainda mais a aleatoriedade ao escolher **limiares aleatórios** para as divisões em vez de buscar o corte ótimo.
+
+**Diferença fundamental:**
+
+| Aspecto | Random Forest | Extra-Trees |
+|---|---|---|
+| Seleção de amostras | Bootstrap (com reposição) | Bootstrap ou todo o dataset |
+| Seleção de features por nó | `sqrt(p)` features | `sqrt(p)` features (igual) |
+| Escolha do limiar de corte | **Busca o MELHOR limiar** entre os sorteados | **Limiar ALEATÓRIO** para cada feature sorteada |
+| Velocidade de treino | Moderada | **Muito mais rápida** |
+| Variância | Baixa | **Ainda mais baixa** |
+| Viés | Baixo | Ligeiramente maior |
+| Risco de overfitting | Baixo | Muito baixo |
+
+**Por que o limiar aleatório ajuda?**
+- Random Forest busca o melhor `threshold` dentre os valores presentes → computacionalmente caro
+- Extra-Trees sorteia o threshold aleatoriamente → elimina busca exaustiva → **treinamento muito mais rápido**
+- A aleatoriedade adicional força as árvores a serem ainda mais diferentes entre si → **menor correlação → menor variância do ensemble**
+
+**Trade-off:** Ligeiramente mais viés em troca de muito menos variância e muito mais velocidade. Em datasets grandes com muitas features, Extra-Trees frequentemente supera Random Forest na prática.
+
+**Scikit-Learn:**
+```python
+from sklearn.ensemble import ExtraTreesClassifier, ExtraTreesRegressor
+```
+
+| Classe | Uso |
+|---|---|
+| `ExtraTreesClassifier` | Classificação com limiares aleatórios |
+| `ExtraTreesRegressor` | Regressão com limiares aleatórios |
+| `RandomForestClassifier` | Classificação com limiares ótimos |
+| `RandomForestRegressor` | Regressão com limiares ótimos |
+
+---
+
+### 10.6 Floresta Aleatória vs. Árvore de Decisão Única
+
+| Característica | Árvore de Decisão | Floresta Aleatória |
+|---|---|---|
+| Número de modelos | 1 | 100–1000 árvores |
+| Variância | **Alta** (instável) | **Baixa** (estável) |
+| Viés | Baixo (profunda) | Baixo (idem) |
+| Overfitting | **Sim** (sem poda) | Resistente |
+| Interpretabilidade | Alta (visualizável) | **Baixa** (caixa preta) |
+| Feature Importance | Sim (por árvore) | **Sim (média geral)** |
+| Velocidade de treino | Rápida | Mais lenta (mas paralelizável) |
+| Velocidade de predição | Rápida | Mais lenta (K árvores) |
+| Dados ausentes | Sensível | Mais robusto |
+| Escalabilidade | Limitada | Alta (n_jobs=-1) |
+
+**Regra prática:** Se uma única árvore overfita → use Random Forest. Se Random Forest é lenta demais → use Extra-Trees.
+
+---
+
+### 10.7 Hiperparâmetros Principais e Seus Efeitos
+
+| Hiperparâmetro | Padrão | Efeito ao Aumentar | Quando Ajustar |
+|---|---|---|---|
+| `n_estimators` | 100 | Mais estável, mais lento | Sempre aumentar até plateaus |
+| `max_features` | `'sqrt'` | Mais features → menos aleatoriedade | Diminuir se overfitting |
+| `max_depth` | `None` | Mais profundidade → mais variância | Limitar se overfitting |
+| `min_samples_leaf` | 1 | Mais restrição → menos variância | Aumentar para datasets pequenos |
+| `bootstrap` | `True` | `False` → pasting sem OOB | Raramente mudar |
+| `oob_score` | `False` | `True` → validação grátis | Ligar para estimar generalização |
+| `n_jobs` | 1 | `-1` usa todos os núcleos | Sempre `-1` em produção |
+| `class_weight` | `None` | `'balanced'` corrige desbalanceamento | Dados desbalanceados |
+
+---
+
+### 10.8 Código Python Completo
+
+**Cenário:** Diagnóstico de câncer de mama (Wisconsin Breast Cancer Dataset). Comparação entre Árvore única, Random Forest e Extra-Trees com análise de Feature Importance.
+
+```python
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.datasets import load_breast_cancer
+from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier
+from sklearn.metrics import classification_report, roc_auc_score, accuracy_score
+from sklearn.inspection import permutation_importance
+
+# ── 1. CARREGAR E DIVIDIR DADOS ──────────────────────────────────────────────
+dados = load_breast_cancer()
+X, y = dados.data, dados.target
+nomes_features = dados.feature_names
+
+X_treino, X_teste, y_treino, y_teste = train_test_split(
+    X, y, test_size=0.2, random_state=42, stratify=y
+)
+print(f"Treino: {X_treino.shape[0]} amostras | Teste: {X_teste.shape[0]} amostras")
+print(f"Features: {X.shape[1]} | Classes: {dados.target_names}")
+
+# ── 2. TREINAR OS 3 MODELOS ───────────────────────────────────────────────────
+arvore = DecisionTreeClassifier(random_state=42)
+rf = RandomForestClassifier(
+    n_estimators=200,
+    max_features='sqrt',
+    oob_score=True,
+    n_jobs=-1,
+    random_state=42
+)
+extra = ExtraTreesClassifier(
+    n_estimators=200,
+    max_features='sqrt',
+    n_jobs=-1,
+    random_state=42
+)
+
+for nome, modelo in [("Árvore", arvore), ("Random Forest", rf), ("Extra-Trees", extra)]:
+    modelo.fit(X_treino, y_treino)
+    y_pred = modelo.predict(X_teste)
+    y_proba = modelo.predict_proba(X_teste)[:, 1]
+    acc = accuracy_score(y_teste, y_pred)
+    auc = roc_auc_score(y_teste, y_proba)
+    print(f"\n{'='*45}")
+    print(f"Modelo: {nome}")
+    print(f"  Acurácia:  {acc:.4f}")
+    print(f"  ROC-AUC:   {auc:.4f}")
+    if hasattr(modelo, 'oob_score_'):
+        print(f"  OOB Score: {modelo.oob_score_:.4f}")
+
+# ── 3. FEATURE IMPORTANCE — RANDOM FOREST ────────────────────────────────────
+importancias = rf.feature_importances_
+indices_ordenados = np.argsort(importancias)[::-1]
+
+print("\nTop 10 Features mais importantes (Random Forest):")
+print(f"{'Rank':<5} {'Feature':<35} {'Importância':>12}")
+print("-" * 55)
+for i in range(10):
+    idx = indices_ordenados[i]
+    print(f"{i+1:<5} {nomes_features[idx]:<35} {importancias[idx]:>12.4f}")
+
+# ── 4. VALIDAÇÃO CRUZADA ──────────────────────────────────────────────────────
+print("\nValidação Cruzada (5-fold, ROC-AUC):")
+for nome, modelo in [("Árvore", arvore), ("RF", rf), ("Extra-Trees", extra)]:
+    scores = cross_val_score(modelo, X, y, cv=5, scoring='roc_auc', n_jobs=-1)
+    print(f"  {nome:<15} AUC = {scores.mean():.4f} ± {scores.std():.4f}")
+
+# ── 5. EFEITO DO N_ESTIMATORS ─────────────────────────────────────────────────
+# Monitorar como o OOB score evolui com o número de árvores
+oob_scores = []
+n_range = range(10, 201, 10)
+for n in n_range:
+    modelo_temp = RandomForestClassifier(
+        n_estimators=n, oob_score=True, n_jobs=-1, random_state=42
+    )
+    modelo_temp.fit(X_treino, y_treino)
+    oob_scores.append(modelo_temp.oob_score_)
+
+# Encontrar platô
+platô_idx = next(i for i in range(1, len(oob_scores))
+                 if abs(oob_scores[i] - oob_scores[i-1]) < 0.001)
+print(f"\nOOB Score estabiliza em ~{list(n_range)[platô_idx]} árvores "
+      f"(score={oob_scores[platô_idx]:.4f})")
+
+# ── 6. DIAGNÓSTICO: DETECTAR FEATURE DOMINANTE ───────────────────────────────
+top_feature = nomes_features[indices_ordenados[0]]
+top_imp = importancias[indices_ordenados[0]]
+if top_imp > 0.3:
+    print(f"\nAVISO: '{top_feature}' domina com {top_imp:.1%} de importância.")
+    print("Considere investigar correlação espúria ou data leakage.")
+else:
+    print(f"\nDistribuição de importância equilibrada. Top feature: "
+          f"'{top_feature}' ({top_imp:.1%})")
+```
+
+**Saída esperada (aproximada):**
+```
+Treino: 455 amostras | Teste: 114 amostras
+Features: 30 | Classes: ['malignant' 'benign']
+
+=============================================
+Modelo: Árvore
+  Acurácia:  0.9123
+  ROC-AUC:   0.9104
+
+=============================================
+Modelo: Random Forest
+  Acurácia:  0.9649
+  ROC-AUC:   0.9941
+  OOB Score: 0.9626
+
+=============================================
+Modelo: Extra-Trees
+  Acurácia:  0.9561
+  ROC-AUC:   0.9918
+
+Top 10 Features mais importantes (Random Forest):
+Rank  Feature                             Importância
+-------------------------------------------------------
+1     worst concave points                     0.1423
+2     worst perimeter                          0.1187
+3     mean concave points                      0.1054
+...
+
+Validação Cruzada (5-fold, ROC-AUC):
+  Árvore          AUC = 0.9231 ± 0.0187
+  RF              AUC = 0.9923 ± 0.0043
+  Extra-Trees     AUC = 0.9912 ± 0.0051
+```
+
+---
+
+### 10.9 Questões no Estilo da Prova (Prof. Túlio Ribeiro)
+
+---
+
+**Questão 1**
+
+Um cientista de dados está construindo uma Floresta Aleatória com 200 árvores e `max_features='sqrt'` para um dataset com 100 features. Após o treino, ele verifica que uma única feature aparece com 60% da importância total. Qual é a interpretação mais correta?
+
+a) Isso confirma que o modelo está bem calibrado, pois identificou a variável mais relevante.
+b) A feature dominante indica que as outras 99 features são irrelevantes e devem ser removidas.
+c) Pode haver data leakage ou correlação espúria; a feature pode conter informação futura ou derivada do alvo.
+d) O parâmetro `max_features` deveria ser aumentado para `'log2'` para corrigir esse comportamento.
+
+**Resposta correta: C**
+
+- **A — ERRADO:** Importância muito concentrada não é sinal de bom calibramento; pode indicar vazamento de dados ou proxy do alvo no treino.
+- **B — ERRADO:** As outras features podem ser importantes entre si. Remover 99 features com base nisso seria precipitado sem investigação.
+- **C — CORRETO:** Uma dominância de 60% é suspeita em datasets com 100 features. Causas comuns: a feature é um proxy do alvo (ex: "total de pagamentos" prediz "inadimplência"), está computada com dados futuros, ou há alta correlação não-causal. Deve-se investigar antes de confiar no modelo.
+- **D — ERRADO:** `'log2'` sortearia ainda menos features por nó (log₂(100) ≈ 6,6 vs. √100 = 10), aumentando a aleatoriedade mas não resolvendo o problema de dominância de uma feature específica.
+
+---
+
+**Questão 2**
+
+Numa Floresta Aleatória treinada com `oob_score=True`, o OOB Score foi 0.91 e a acurácia no conjunto de validação (holdout 20%) foi 0.93. Qual afirmação é verdadeira?
+
+a) O OOB Score é sempre igual à acurácia de validação; os valores diferentes indicam bug no código.
+b) O OOB Score usa amostras que cada árvore não viu, sendo uma estimativa válida de generalização — a pequena diferença é normal.
+c) O OOB Score de 0.91 indica underfitting grave; é necessário aumentar `max_depth`.
+d) Como o OOB Score é menor que a acurácia de validação, o modelo está overfittando no conjunto de validação.
+
+**Resposta correta: B**
+
+- **A — ERRADO:** OOB Score e acurácia de validação usam amostras diferentes e metodologias diferentes; diferenças pequenas são esperadas e normais.
+- **B — CORRETO:** O OOB Score funciona como uma validação cruzada embutida, usando os ~36,8% de amostras que cada árvore não usou no treino. É uma estimativa pessimista ligeiramente conservadora, por isso 0.91 vs 0.93 é uma diferença completamente normal.
+- **C — ERRADO:** 0.91 de OOB Score é um resultado excelente. Underfitting seria indicado por baixa acurácia tanto no treino quanto na validação, não por uma ligeira diferença entre OOB e holdout.
+- **D — ERRADO:** O modelo overfitar no conjunto de validação seria impossível por definição (validação não é usada no treino). A diferença reflete variabilidade amostral entre os dois conjuntos.
+
+---
+
+**Questão 3**
+
+Um analista compara Random Forest e Extra-Trees no mesmo dataset com 1 milhão de amostras e 500 features. Extra-Trees treinou 10x mais rápido. Por qual razão técnica isso ocorre?
+
+a) Extra-Trees usa menos árvores por padrão, reduzindo o tempo de treino proporcionalmente.
+b) Extra-Trees aplica poda nas árvores durante o treinamento, o que reduz a complexidade.
+c) Extra-Trees não realiza bootstrap, treinando cada árvore em todo o dataset sem reamostragem.
+d) Extra-Trees escolhe limiares de corte aleatoriamente em vez de buscar o melhor limiar, eliminando a busca exaustiva em cada nó.
+
+**Resposta correta: D**
+
+- **A — ERRADO:** O padrão de `n_estimators` é 100 para ambos. A diferença de velocidade não está no número de árvores, mas na computação por nó.
+- **B — ERRADO:** Extra-Trees não poda as árvores; na verdade, as árvores costumam crescer tão profundas quanto Random Forest. A velocidade vem da escolha do limiar, não da profundidade.
+- **C — ERRADO:** Extra-Trees por padrão ainda usa bootstrap (`bootstrap=True`). Mesmo quando usa o dataset completo, a principal diferença de velocidade é o limiar aleatório, não a amostragem.
+- **D — CORRETO:** O gargalo computacional no treino de uma árvore de decisão é a busca do melhor threshold. Com 500 features e n valores únicos por feature, cada nó exige ordenação e avaliação de n×500 splits. Extra-Trees sorteia um threshold aleatório por feature → apenas `sqrt(500) ≈ 22` avaliações por nó sem ordenação → ganho de velocidade massivo.
+
+---
+
+**Questão 4**
+
+Em um problema de classificação com dados desbalanceados (90% classe 0, 10% classe 1), um modelo Random Forest atingiu 90% de acurácia mas identificou apenas 20% dos casos positivos (baixo Recall). Qual das intervenções abaixo é mais apropriada?
+
+a) Aumentar `n_estimators` de 100 para 1000, pois mais árvores sempre melhoram o Recall.
+b) Usar `class_weight='balanced'` para que o algoritmo penalize mais os erros na classe minoritária.
+c) Reduzir `max_features` para `'log2'` pois menos features por nó forçam o modelo a aprender a minoria.
+d) Desativar o bootstrap (`bootstrap=False`) para que todas as árvores vejam todos os casos positivos.
+
+**Resposta correta: B**
+
+- **A — ERRADO:** Aumentar `n_estimators` melhora a estabilidade e reduz variância, mas não corrige o desequilíbrio de classes. Com 90% de dados negativos, mais árvores apenas confirmam o viés existente.
+- **B — CORRETO:** `class_weight='balanced'` faz o scikit-learn calcular pesos inversamente proporcionais à frequência: classe 0 peso ~0.56, classe 1 peso ~5.0. Isso penaliza muito mais erros na classe minoritária, forçando as árvores a aprender padrões dos casos positivos → Recall aumenta.
+- **C — ERRADO:** `max_features='log2'` aumenta aleatoriedade nas features, mas não endereça o problema de desequilíbrio de classes. As instâncias negativas ainda dominam nas amostras bootstrap.
+- **D — ERRADO:** Desativar bootstrap faz cada árvore treinar no dataset completo (pasting), mas com 90% de negativos, isso ainda não resolve o desequilíbrio. Pior: perde-se a estimativa OOB e reduz-se a diversidade entre árvores.
+
+---
+
+*Fim da Seção 10 — próxima seção: KNN (K-Nearest Neighbors)*
 
 ---
 
