@@ -1898,3 +1898,299 @@ d) Precision=29%, Recall=20%, F1=23%. A solução é remover outliers do conjunt
 *Fim da Seção 6 — próxima seção: SVM*
 
 ---
+
+## Seção 7 — Máquinas Vetores de Suporte (SVM)
+
+---
+
+### 7.1 Visão Geral
+
+**SVM (Support Vector Machines)** é um modelo de AM versátil, fundamentado na **Teoria de Vapnik-Chervonenkis**, que busca a fronteira de decisão com **maior margem possível** entre as classes.
+
+**Aplicações principais:**
+- Classificação (linear e não-linear)
+- Regressão
+- Detecção de anomalias (outliers)
+
+**Diferencial frente a redes neurais:** o SVM resolve um problema de **otimização convexa** — sem mínimos locais, sempre converge para o **mínimo global**.
+
+**Cenário ideal:** dados de alta complexidade em conjuntos de **pequeno a médio porte** (escala ruim em Big Data).
+
+---
+
+### 7.2 Essência Geométrica: Hiperplano e Margem
+
+| Conceito | Definição |
+|----------|-----------|
+| **Hiperplano** | Fronteira de decisão: linha em 2D, plano em 3D, hiperplano em nD |
+| **Margem** | "Corredor" entre as duas classes — SVM busca o corredor **mais largo possível** |
+| **Vetores de Suporte** | Pontos **nas bordas** da margem que a definem — os únicos que importam |
+
+> "Qualquer outro classificador linear separa os dados. O SVM separa com a maior folga possível."
+
+**Propriedade dos Vetores de Suporte:** se você apagar todos os outros dados e retreinar apenas com os vetores de suporte, o hiperplano será **exatamente o mesmo**. O modelo é altamente esparso — eficiente em memória pós-treinamento.
+
+---
+
+### 7.3 Formulação Matemática
+
+**Equação do hiperplano:**
+
+```
+w^T · x + b = 0
+```
+
+| Símbolo | Significado |
+|---------|-------------|
+| **w** | Vetor de pesos (perpendicular ao hiperplano) |
+| **b** | Viés (bias) |
+| **‖w‖** | Norma do vetor de pesos |
+| **2 / ‖w‖** | Largura total da margem |
+
+**Objetivo de otimização:** maximizar a margem = **minimizar ‖w‖²**, sujeito à restrição de que nenhum ponto caia no lado errado da margem.
+
+> Quanto menor ‖w‖, maior a margem — o SVM resolve isso via programação quadrática convexa.
+
+---
+
+### 7.4 Margem Rígida vs. Margem Suave
+
+#### Margem Rígida (Hard Margin)
+- Exige que **todos** os pontos fiquem fora da margem e no lado correto
+- Só funciona com dados **linearmente separáveis**
+- **Sensível a outliers** — um único ponto fora do lugar pode tornar a separação impossível ou distorcer toda a margem
+
+#### Margem Suave (Soft Margin) — prática real
+
+O hiperparâmetro **C** controla o equilíbrio entre margem larga e erros tolerados:
+
+| C | Comportamento | Risco |
+|---|---------------|-------|
+| **C alto** (ex: 100) | Margem estreita, penaliza cada erro severamente, tenta acertar tudo no treino | **Overfitting** |
+| **C baixo** (ex: 1) | Margem larga, tolera violações, foca em generalização | **Underfitting** |
+
+> Analogia: C alto = professor rígido que não aceita nenhum erro; C baixo = professor tolerante que prefere uma regra geral simples.
+
+---
+
+### 7.5 Classificação Não-Linear: Kernel Trick
+
+Quando as classes são **não-linearmente separáveis** (ex: círculos concêntricos, duas luas), um hiperplano reto nunca separa. A solução é **projetar os dados para dimensões superiores** onde eles se tornem separáveis.
+
+**O problema:** calcular essa projeção explícita para dimensões infinitas é computacionalmente inviável.
+
+**A solução — Kernel Trick (Teorema de Mercer):** o SVM não precisa calcular as coordenadas na dimensão superior. Ele só precisa do **produto escalar** (similaridade) entre os pontos nesse espaço — e o kernel calcula isso diretamente.
+
+#### Kernels disponíveis no Scikit-Learn
+
+| Kernel | Fórmula | Quando usar | Parâmetros |
+|--------|---------|-------------|------------|
+| **Linear** | K(x,z) = x^T·z | Dados linearmente separáveis, textos, alta dimensionalidade | C |
+| **Polinomial** | K(x,z) = (γ·x^T·z + coef0)^d | Curvas polinomiais | C, degree, coef0 |
+| **RBF (Gaussiano)** | K(x,z) = exp(−γ·‖x−z‖²) | Caso geral não-linear, mais versátil | C, γ (gamma) |
+
+#### Parâmetro Gamma (γ) no Kernel RBF
+
+γ define o **raio de influência** de cada vetor de suporte:
+
+| γ | Comportamento |
+|---|---------------|
+| **γ alto** | Raio pequeno → "ilhas" de decisão ao redor de cada ponto → **overfitting** |
+| **γ baixo** | Raio grande → fronteira suave e ampla → **underfitting** |
+
+**Fórmula RBF aplicada:**
+```
+K(x1, x2) = exp(−γ · ‖x1 − x2‖²)
+```
+Exemplo: x = -1, referência em -2, γ = 0.30  
+→ distância = |-1 - (-2)| = 1  
+→ K = exp(-0.3 × 1²) = **0.74** (alta similaridade)
+
+---
+
+### 7.6 SVM para Regressão (SVR)
+
+A lógica se **inverte** em relação à classificação:
+
+| | Classificação (SVC) | Regressão (SVR) |
+|--|---------------------|-----------------|
+| **Objetivo** | Maximizar margem entre classes | Encaixar o **máximo de pontos dentro** da margem |
+| **Violação** | Pontos no lado errado | Pontos **fora** da margem |
+| **Hiperparâmetro chave** | C | **ε (epsilon)** + C |
+
+**Epsilon (ε):** define a largura da "faixa de tolerância" ao redor da linha de regressão. Pontos dentro de ε não geram erro — o modelo é **ε-insensitive**.
+
+- ε pequeno → faixa estreita → mais vetores de suporte → mais regularização
+- ε grande → faixa larga → aceita mais variação → previsão mais suave
+
+---
+
+### 7.7 Implementação no Scikit-Learn
+
+| Tarefa | Classe | Parâmetros principais |
+|--------|--------|-----------------------|
+| Classificação Linear | `LinearSVC` | C |
+| Classificação Não-Linear | `SVC` | C, kernel, gamma, degree |
+| Regressão Linear | `LinearSVR` | C, epsilon |
+| Regressão Não-Linear | `SVR` | C, kernel, gamma, epsilon |
+
+> **Obrigatório:** normalizar os dados antes de treinar SVM (`StandardScaler`). SVM é sensível à escala das features.
+
+---
+
+### 7.8 Vantagens e Desvantagens
+
+| | Vantagens | Desvantagens |
+|-|-----------|--------------|
+| **Dimensionalidade** | Funciona bem com features > amostras | Lento para Big Data: O(n²) a O(n³) |
+| **Memória** | Esparso — só armazena vetores de suporte | Sem probabilidades diretas (precisa Platt Scaling) |
+| **Fronteira** | Kernel Trick permite separações complexas | Escolha errada de kernel → overfitting |
+| **Otimização** | Mínimo global garantido (convexa) | Difícil interpretar: "caixa-preta" |
+
+---
+
+### 7.9 Código Python — SVM Completo
+
+```python
+import numpy as np
+from sklearn.svm import SVC, SVR, LinearSVC
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.metrics import classification_report, accuracy_score
+
+# ── Cenário: classificar tumores como benignos/malignos ──
+np.random.seed(42)
+n = 300
+tamanho = np.random.normal(5, 2, n)
+textura = np.random.normal(10, 3, n)
+y = ((tamanho > 6) & (textura > 10)).astype(int)
+y = np.where(np.random.rand(n) < 0.08, 1 - y, y)  # 8% de ruído
+X = np.column_stack([tamanho, textura])
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42, stratify=y
+)
+
+# ── 1. SVM Linear via Pipeline (boas práticas) ──
+pipe_linear = Pipeline([
+    ('scaler', StandardScaler()),
+    ('svm', LinearSVC(C=1.0, random_state=42, max_iter=5000))
+])
+pipe_linear.fit(X_train, y_train)
+print("LinearSVC:", accuracy_score(y_test, pipe_linear.predict(X_test)))
+
+# ── 2. SVM com Kernel RBF ──
+pipe_rbf = Pipeline([
+    ('scaler', StandardScaler()),
+    ('svm', SVC(kernel='rbf', C=1.0, gamma='scale', random_state=42))
+])
+pipe_rbf.fit(X_train, y_train)
+print("SVC RBF:", accuracy_score(y_test, pipe_rbf.predict(X_test)))
+print(classification_report(y_test, pipe_rbf.predict(X_test),
+                             target_names=['Benigno', 'Maligno']))
+
+# ── 3. GridSearch para otimizar C e gamma ──
+param_grid = {
+    'svm__C': [0.1, 1, 10, 100],
+    'svm__gamma': [0.001, 0.01, 0.1, 1]
+}
+grid = GridSearchCV(pipe_rbf, param_grid, cv=5, scoring='f1', n_jobs=-1)
+grid.fit(X_train, y_train)
+print("Melhores params:", grid.best_params_)
+print("Melhor F1:", grid.best_score_.round(3))
+
+# ── 4. Calcular manualmente a decisão (distância ao hiperplano) ──
+# (SVC com probability=True para obter probabilidades — usa Platt Scaling)
+pipe_prob = Pipeline([
+    ('scaler', StandardScaler()),
+    ('svm', SVC(kernel='rbf', C=1.0, gamma='scale',
+                probability=True, random_state=42))
+])
+pipe_prob.fit(X_train, y_train)
+amostra = np.array([[7.5, 12.0]])
+print("Probabilidade maligno:", pipe_prob.predict_proba(amostra)[0, 1].round(3))
+print("Distância ao hiperplano:", pipe_prob.decision_function(amostra)[0].round(3))
+```
+
+---
+
+### 7.10 Questões no Estilo da Prova
+
+---
+
+**Questão 1 — Margem e Vetores de Suporte**
+
+Uma empresa de crédito treinou um SVM linear para aprovar ou recusar empréstimos. O engenheiro percebeu que, dos 10.000 clientes no banco de dados, o modelo treinado utiliza apenas 47 pontos para definir sua fronteira de decisão. Esses 47 pontos são chamados de:
+
+a) Hiperplanos de separação  
+b) Pontos de regularização  
+c) Vetores de suporte  
+d) Parâmetros do kernel  
+
+**Resposta: c)**
+
+- **(a) Incorreta.** Hiperplano é a fronteira em si (linha/plano/hiperplano), não os pontos. Há apenas um hiperplano.
+- **(b) Incorreta.** Não existe essa terminologia no SVM. Regularização é controlada pelo parâmetro C, não por pontos específicos.
+- **(c) CORRETA.** Os vetores de suporte são exatamente os pontos nas bordas da margem que definem o hiperplano. Remover todos os outros dados e retreinar com apenas esses 47 pontos produz o mesmo hiperplano.
+- **(d) Incorreta.** Parâmetros do kernel (C, γ) são hiperparâmetros numéricos do modelo, não pontos do dataset.
+
+---
+
+**Questão 2 — Hiperparâmetro C**
+
+Um SVM com kernel RBF foi treinado com C = 1000 para classificar imagens de tumores. O modelo atingiu 99% de acurácia no treino, mas apenas 61% no teste. O engenheiro quer reduzir o overfitting. Qual ajuste é mais indicado?
+
+a) Aumentar ainda mais C para penalizar mais os erros  
+b) Reduzir C para permitir uma margem mais larga e tolerante  
+c) Trocar o kernel RBF pelo kernel Linear, pois linear nunca faz overfitting  
+d) Aumentar o gamma para ampliar o raio de influência dos vetores de suporte  
+
+**Resposta: b)**
+
+- **(a) Incorreta.** Aumentar C estreita ainda mais a margem e força o modelo a acertar todo o treino — piora o overfitting.
+- **(b) CORRETA.** C baixo = margem suave e larga = modelo tolera erros no treino em favor da generalização. Reduzir C é o caminho para combater overfitting no SVM.
+- **(c) Incorreta.** O kernel Linear também pode fazer overfitting, especialmente com C alto. Além disso, mudar o kernel não resolve o problema raiz (C excessivo).
+- **(d) Incorreta.** Aumentar gamma torna a fronteira ainda mais complexa (raio de influência menor → mais "ilhas" → mais overfitting). O efeito é oposto ao desejado.
+
+---
+
+**Questão 3 — Kernel Trick**
+
+O dataset de fraude de cartão de crédito de uma fintech tem padrões em formato de "espiral" — as transações fraudulentas estão entrelaçadas com as legítimas de forma não-linear. O SVM linear falhou (55% de acurácia). Qual recurso do SVM resolve esse problema e como funciona?
+
+a) Aumentar C fará o SVM linear aprender a separação espiral  
+b) O Kernel Trick projeta os dados para um espaço de maior dimensão onde eles se tornam linearmente separáveis, sem calcular a projeção explicitamente  
+c) O Kernel Trick reduz o número de features, tornando o problema mais simples  
+d) Usar regressão SVM (SVR) em vez de classificação resolve padrões não-lineares  
+
+**Resposta: b)**
+
+- **(a) Incorreta.** C não muda a geometria do hiperplano — apenas ajusta a tolerância à violações. Um hiperplano linear nunca separa uma espiral, independente de C.
+- **(b) CORRETA.** O Kernel Trick (Teorema de Mercer) permite ao SVM operar como se projetasse os dados em dimensão superior, calculando apenas o produto escalar entre os pontos nesse espaço (sem a projeção explícita). O kernel RBF é ideal para padrões complexos como espirais.
+- **(c) Incorreta.** O Kernel Trick **aumenta** a dimensionalidade implicitamente — ele não reduz features. Redução de dimensionalidade é trabalho do PCA/LDA.
+- **(d) Incorreta.** SVR é para **regressão** (prever valores contínuos), não para classificação. O problema de fraude é binário (fraude / não-fraude).
+
+---
+
+**Questão 4 — SVM Regressão vs. Classificação**
+
+Um analista precisa usar SVM para **prever o valor de imóveis** (regressão). Ele aumentou o parâmetro ε (epsilon) de 0.1 para 2.0. Qual é o efeito esperado?
+
+a) A fronteira de decisão ficará mais larga, separando melhor as classes  
+b) O modelo passará a ter mais vetores de suporte, aumentando a regularização  
+c) A faixa de tolerância ao redor da linha de previsão será mais larga — menos pontos gerarão erro, resultando em previsão mais suave com menos vetores de suporte  
+d) O ε não afeta o SVR, apenas o SVC  
+
+**Resposta: c)**
+
+- **(a) Incorreta.** "Fronteira de decisão" e "classes" são conceitos de classificação. Em regressão, ε controla a largura da faixa ao redor da linha de previsão, não uma fronteira entre classes.
+- **(b) Incorreta.** É o contrário: **reduzir** ε aumenta o número de vetores de suporte (mais pontos ficam fora da faixa estreita). Aumentar ε reduz os vetores de suporte.
+- **(c) CORRETA.** ε define a zona de tolerância: pontos dentro de ε não contribuem com erro (ε-insensitive). Aumentar ε → faixa mais larga → menos pontos ficam "fora" → menos vetores de suporte → previsão mais suave (menos complexa).
+- **(d) Incorreta.** ε é exclusivo do SVR e é fundamental — controla a largura da margem de tolerância. Não existe no SVC.
+
+---
+
+*Fim da Seção 7 — próxima seção: Árvore de Decisão*
+
+---
